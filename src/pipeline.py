@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import sys
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 
 import jsonschema
@@ -29,8 +31,16 @@ def load_config(config_path: str = None) -> dict:
         return yaml.safe_load(f)
 
 
+@contextmanager
+def _timer(timings: dict, key: str):
+    t = time.perf_counter()
+    yield
+    timings[key] = round(time.perf_counter() - t, 2)
+
+
 def save_annotation(segments: list[dict], metadata: dict, config: dict,
-                    step1_raw_count: int, step2_repairs: int, step5_repairs: int) -> str:
+                    step1_raw_count: int, step2_repairs: int, step5_repairs: int,
+                    timings: dict) -> str:
     video_id = metadata["video_id"]
     video_output_dir = os.path.join(config["output_dir"], video_id)
 
@@ -57,6 +67,7 @@ def save_annotation(segments: list[dict], metadata: dict, config: dict,
             "step1_raw_segments": step1_raw_count,
             "step2_repairs": step2_repairs,
             "step5_repairs": step5_repairs,
+            "timings_sec": timings,
         },
     }
 
@@ -82,23 +93,40 @@ def process_video(video_path: str, config: dict) -> str:
     video_id = os.path.splitext(os.path.basename(video_path))[0]
     logger.info(f"{'='*60}\nProcessing: {video_id}\n{'='*60}")
 
-    metadata, frame_dir = run_step0(video_path, config)
+    timings: dict = {}
+    video_t0 = time.perf_counter()
+
+    with _timer(timings, "step0"):
+        metadata, frame_dir = run_step0(video_path, config)
     client = get_vlm_client(config)
 
     # scene segmentation + description
-    segments = run_step1(client, frame_dir, metadata, config)
+    with _timer(timings, "step1"):
+        segments = run_step1(client, frame_dir, metadata, config)
     step1_raw_count = len(segments)
-    segments, step2_repairs = run_step2(segments, metadata["duration"], config, video_id)
-    segments = run_step3(client, frame_dir, segments, metadata, config)
+    with _timer(timings, "step2"):
+        segments, step2_repairs = run_step2(segments, metadata["duration"], config, video_id)
+    with _timer(timings, "step3"):
+        segments = run_step3(client, frame_dir, segments, metadata, config)
 
     # atomic events
-    segments = run_step4(client, frame_dir, segments, metadata, config)
-    segments, step5_repairs = run_step5(segments, metadata, config)
+    with _timer(timings, "step4"):
+        segments = run_step4(client, frame_dir, segments, metadata, config)
+    with _timer(timings, "step5"):
+        segments, step5_repairs = run_step5(segments, metadata, config)
 
     # object detection
-    segments = run_step6(client, frame_dir, segments, metadata, config)
+    with _timer(timings, "step6"):
+        segments = run_step6(client, frame_dir, segments, metadata, config)
 
-    return save_annotation(segments, metadata, config, step1_raw_count, step2_repairs, step5_repairs)
+    timings["total"] = round(time.perf_counter() - video_t0, 2)
+    logger.info(
+        f"[{video_id}] timings(s): " +
+        " ".join(f"{k}={v}" for k, v in timings.items())
+    )
+
+    return save_annotation(segments, metadata, config,
+                           step1_raw_count, step2_repairs, step5_repairs, timings)
 
 
 def clear_cache(video_path: str, config: dict):
