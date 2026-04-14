@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+
+data/
+models/Qwen*/
+models/grounding_dino/*.pth
+
+.DS_Store
+*.log

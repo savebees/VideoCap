@@ -1,0 +1,38 @@
+# ── Model ──
+vlm_model: "Qwen2.5-VL-32B-Instruct"
+vllm_base_url: "http://localhost:8000/v1"
+grounding_dino_config: "models/grounding_dino/GroundingDINO_SwinT_OGC.py"
+grounding_dino_weights: "models/grounding_dino/groundingdino_swint_ogc.pth"
+
+# ── Preprocessing (Step 0) ──
+video_fps: 1.0
+frame_quality: 95
+frame_max_long_side: 672
+
+# ── Scene Segmentation (Steps 1–2) ──
+min_segment_duration: 3.0
+
+# ── Dense Captioning (Step 3) ──
+prefix_context_num: 3
+min_description_words: 100
+vlm_max_tokens_step3: 2048
+max_retries_short_desc: 2
+
+# ── Atomic Events (Steps 4–5) ──
+min_event_duration: 1.0
+vlm_max_tokens_step4: 4096
+
+# ── Object Detection (Step 6) ──
+detection_box_threshold: 0.35
+detection_text_threshold: 0.25
+keyframe_strategy: "all"
+detection_nms_threshold: 0.5
+
+# ── VLM General ──
+vlm_temperature: 0.0
+vlm_max_tokens_step1: 4096
+max_retries: 3
+
+# ── Paths ──
+video_dir: "data/videos"
+output_dir: "data/output"
