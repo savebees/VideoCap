@@ -1,6 +1,5 @@
 import base64
 import logging
-import math
 import os
 import subprocess
 
@@ -14,7 +13,7 @@ def extract_frames(
     quality: int = 95,
     max_long_side: int = 672,
 ) -> list[str]:
-    """Extract frames from video at target fps. Returns list of frame filenames."""
+
     os.makedirs(output_dir, exist_ok=True)
 
     scale_filter = (
@@ -41,24 +40,18 @@ def extract_frames(
     return frame_files
 
 
-def load_frames_as_base64(
+def build_video_content(
     frame_dir: str,
     fps: float,
     start_time: float | None = None,
     end_time: float | None = None,
-) -> tuple[str, int]:
-    """Load frames as base64 data URL for vLLM video input."""
+) -> tuple[dict, int]:
+    
     frame_files = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
-    if not frame_files:
-        raise RuntimeError(f"No frames found in {frame_dir}")
 
-    if start_time is not None or end_time is not None:
-        start_idx = int(math.floor(start_time * fps)) if start_time is not None else 0
-        end_idx = int(math.ceil(end_time * fps)) if end_time is not None else len(frame_files)
-        start_idx = max(0, start_idx)
-        end_idx = min(len(frame_files), end_idx)
-        if start_idx >= end_idx:
-            start_idx = max(0, end_idx - 1)
+    if start_time is not None and end_time is not None:
+        start_idx = int(start_time * fps)
+        end_idx = int(end_time * fps)
         frame_files = frame_files[start_idx:end_idx]
 
     b64_frames = []
@@ -66,15 +59,5 @@ def load_frames_as_base64(
         with open(os.path.join(frame_dir, fname), "rb") as f:
             b64_frames.append(base64.b64encode(f.read()).decode("ascii"))
 
-    return "data:video/jpeg;base64," + ",".join(b64_frames), len(b64_frames)
-
-
-def make_video_frames_content(
-    frame_dir: str,
-    fps: float,
-    start_time: float | None = None,
-    end_time: float | None = None,
-) -> tuple[dict, int]:
-    """Build vLLM-compatible video content dict from pre-extracted frames."""
-    data_url, num_frames = load_frames_as_base64(frame_dir, fps, start_time, end_time)
-    return {"type": "video_url", "video_url": {"url": data_url}}, num_frames
+    data_url = "data:video/jpeg;base64," + ",".join(b64_frames)
+    return {"type": "video_url", "video_url": {"url": data_url}}, len(b64_frames)

@@ -8,7 +8,7 @@ import os
 from openai import OpenAI
 
 from prompts import PROMPT_SEGMENT, PROMPT_CAPTION, PROMPT_CAPTION_RETRY
-from utils.frames import make_video_frames_content
+from utils.frames import build_video_content
 from utils.video import parse_json_array
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ def run_step1(client: OpenAI, frame_dir: str, metadata: dict, config: dict) -> l
             return json.load(f)
 
     fps = config.get("video_fps", 1.0)
-    video_content, num_frames = make_video_frames_content(frame_dir, fps)
+    video_content, num_frames = build_video_content(frame_dir, fps)
     prompt = PROMPT_SEGMENT.format(num_frames=num_frames, duration=metadata["duration"])
 
     max_retries = config.get("max_retries", 3)
@@ -56,7 +56,7 @@ def run_step1(client: OpenAI, frame_dir: str, metadata: dict, config: dict) -> l
         except (json.JSONDecodeError, AssertionError) as e:
             logger.warning(f"[Step 1] Parse failed (attempt {attempt}): {e}")
             if attempt == max_retries:
-                raise RuntimeError(f"[Step 1] Failed after {max_retries} retries") from e
+                raise RuntimeError from e
 
     with open(cache_path, "w") as f:
         json.dump(segments, f, indent=2)
@@ -67,7 +67,7 @@ def run_step1(client: OpenAI, frame_dir: str, metadata: dict, config: dict) -> l
 # ─── Step 2 ───
 
 def run_step2(segments: list[dict], duration: float, config: dict, video_id: str) -> tuple[list[dict], int]:
-    """Programmatic boundary repair: snap endpoints, fix gaps/overlaps, merge short segments."""
+    """Programmatic boundary repair."""
     cache_path = os.path.join(config["output_dir"], video_id, "step2_validated.json")
     if os.path.exists(cache_path):
         logger.info(f"[Step 2] {video_id}: cached")
@@ -175,7 +175,7 @@ def _vlm_call(client: OpenAI, video_content: dict, prompt_text: str, config: dic
 
 def run_step3(client: OpenAI, frame_dir: str, segments: list[dict],
               metadata: dict, config: dict) -> list[dict]:
-    """Dense captioning with prefix context. Sequential per-segment VLM calls."""
+    """Dense captioning with prefix context."""
     video_id = metadata["video_id"]
     cache_path = os.path.join(config["output_dir"], video_id, "step3_captioned.json")
     if os.path.exists(cache_path):
@@ -197,7 +197,7 @@ def run_step3(client: OpenAI, frame_dir: str, segments: list[dict],
                      f"[{seg['start']:.1f}s - {seg['end']:.1f}s]")
 
         prefix = _build_prefix(completed[:i], max_prev)
-        video_content, num_frames = make_video_frames_content(
+        video_content, num_frames = build_video_content(
             frame_dir, fps, start_time=seg["start"], end_time=seg["end"])
 
         prompt = PROMPT_CAPTION.format(prefix_context=prefix, num_frames=num_frames,

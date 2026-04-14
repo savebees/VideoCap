@@ -35,7 +35,7 @@ def extract_metadata(video_path: str) -> dict:
 
 
 def parse_json_array(raw_text: str) -> list:
-    """Parse JSON array from VLM output via regex extraction."""
+    """Parse JSON array from VLM output."""
     if not raw_text or not raw_text.strip():
         raise json.JSONDecodeError("Empty response", raw_text or "", 0)
     match = re.search(r"\[.*\]", raw_text, re.DOTALL)

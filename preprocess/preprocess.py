@@ -19,11 +19,7 @@ def run_step0(video_path: str, config: dict) -> tuple[dict, str]:
     metadata_path = os.path.join(video_output_dir, "metadata.json")
     frame_dir = os.path.join(video_output_dir, "frames")
 
-    frames_exist = (
-        os.path.isdir(frame_dir)
-        and any(f.endswith(".jpg") for f in os.listdir(frame_dir))
-    )
-    if os.path.exists(metadata_path) and frames_exist:
+    if os.path.exists(metadata_path) and os.path.exists(frame_dir):
         logger.info(f"[Step 0] {video_id}: cached")
         with open(metadata_path) as f:
             return json.load(f), frame_dir

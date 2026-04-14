@@ -1,5 +1,3 @@
-"""Main orchestration + CLI for the dense video annotation pipeline."""
-
 import argparse
 import json
 import logging
@@ -19,7 +17,6 @@ from src.object_detection import run_step6
 from utils.vllm_client import get_vlm_client
 
 logger = logging.getLogger(__name__)
-PIPELINE_VERSION = "0.3.0"
 
 
 def load_config(config_path: str = None) -> dict:
@@ -51,7 +48,6 @@ def save_annotation(segments: list[dict], metadata: dict, config: dict,
         "segments": segments,
         "metadata": {
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "pipeline_version": PIPELINE_VERSION,
             "models": {"vlm": config["vlm_model"], "detector": "GroundingDINO-Swin-T"},
             "total_segments": n,
             "avg_segment_duration": round(metadata["duration"] / n, 2) if n else 0,
@@ -89,17 +85,17 @@ def process_video(video_path: str, config: dict) -> str:
     metadata, frame_dir = run_step0(video_path, config)
     client = get_vlm_client(config)
 
-    # Category A: scene segmentation + description
+    # scene segmentation + description
     segments = run_step1(client, frame_dir, metadata, config)
     step1_raw_count = len(segments)
     segments, step2_repairs = run_step2(segments, metadata["duration"], config, video_id)
     segments = run_step3(client, frame_dir, segments, metadata, config)
 
-    # Category C: atomic events
+    # atomic events
     segments = run_step4(client, frame_dir, segments, metadata, config)
     segments, step5_repairs = run_step5(segments, metadata, config)
 
-    # Category B: object detection
+    # object detection
     segments = run_step6(client, frame_dir, segments, metadata, config)
 
     return save_annotation(segments, metadata, config, step1_raw_count, step2_repairs, step5_repairs)

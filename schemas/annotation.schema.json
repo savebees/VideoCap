@@ -62,10 +62,9 @@
     },
     "metadata": {
       "type": "object",
-      "required": ["generated_at", "pipeline_version", "models", "total_segments", "avg_segment_duration", "total_events", "avg_events_per_segment", "total_objects"],
+      "required": ["generated_at", "models", "total_segments", "avg_segment_duration", "total_events", "avg_events_per_segment", "total_objects"],
       "properties": {
         "generated_at": {"type": "string"},
-        "pipeline_version": {"type": "string"},
         "models": {
           "type": "object",
           "properties": {

@@ -8,7 +8,7 @@ import os
 from openai import OpenAI
 
 from prompts import PROMPT_ATOMIC_EVENTS
-from utils.frames import make_video_frames_content
+from utils.frames import build_video_content
 from utils.video import parse_json_array
 
 logger = logging.getLogger(__name__)
@@ -26,7 +26,7 @@ def _parse_events(raw_text: str) -> list[dict]:
 
 def _segment_single_scene(client: OpenAI, frame_dir: str, fps: float,
                           scene: dict, config: dict) -> list[dict]:
-    video_content, num_frames = make_video_frames_content(
+    video_content, num_frames = build_video_content(
         frame_dir, fps, start_time=scene["start"], end_time=scene["end"])
     prompt = PROMPT_ATOMIC_EVENTS.format(
         num_frames=num_frames, start=scene["start"], end=scene["end"],
@@ -81,7 +81,7 @@ def run_step4(client: OpenAI, frame_dir: str, segments: list[dict],
 
 def _validate_events(events: list[dict], scene_start: float, scene_end: float,
                      min_dur: float) -> tuple[list[dict], int]:
-    """Validate and repair event boundaries. Returns (repaired events, repair count)."""
+    """Validate and repair event boundaries."""
     events = copy.deepcopy(events)
     repairs = 0
 
