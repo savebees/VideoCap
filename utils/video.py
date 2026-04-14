@@ -35,22 +35,10 @@ def get_video_metadata(video_path: str) -> dict:
 
 
 def parse_json_array(raw_text: str) -> list:
-    """Parse JSON array from VLM output."""
-    text = raw_text.strip()
-    if not text:
-        raise json.JSONDecodeError("Empty response", "", 0)
-    text = re.sub(r"```(?:json)?\n?|\n?```", "", text).strip()
-
-    start = text.find("[")
-    if start != -1:
-        depth = 0
-        for i in range(start, len(text)):
-            if text[i] == "[":
-                depth += 1
-            elif text[i] == "]":
-                depth -= 1
-                if depth == 0:
-                    text = text[start:i + 1]
-                    break
-
-    return json.loads(text)
+    """Parse JSON array from VLM output via regex extraction."""
+    if not raw_text or not raw_text.strip():
+        raise json.JSONDecodeError("Empty response", raw_text or "", 0)
+    match = re.search(r"\[.*\]", raw_text, re.DOTALL)
+    if match is None:
+        raise json.JSONDecodeError("No JSON array found", raw_text, 0)
+    return json.loads(match.group(0))

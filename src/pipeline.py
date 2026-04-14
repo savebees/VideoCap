@@ -7,6 +7,7 @@ import os
 import sys
 from datetime import datetime, timezone
 
+import jsonschema
 import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -62,6 +63,17 @@ def save_annotation(segments: list[dict], metadata: dict, config: dict,
             "step5_repairs": step5_repairs,
         },
     }
+
+    schema_path = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "schemas", "annotation.schema.json",
+    )
+    with open(schema_path) as f:
+        schema = json.load(f)
+    try:
+        jsonschema.validate(instance=annotation, schema=schema)
+    except jsonschema.ValidationError as e:
+        logger.warning(f"Schema validation failed for {video_id}: {e.message} at {list(e.absolute_path)}")
 
     out_path = os.path.join(video_output_dir, "annotation.json")
     with open(out_path, "w") as f:

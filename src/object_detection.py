@@ -107,8 +107,7 @@ def _load_grounding_dino(config: dict):
 
 def _run_grounding_dino(model, image_path: str, text_prompts: list[str],
                         box_threshold: float, text_threshold: float,
-                        orig_w: int, orig_h: int,
-                        frame_w: int, frame_h: int) -> list[dict]:
+                        orig_w: int, orig_h: int) -> list[dict]:
     from groundingdino.util.inference import predict
     import groundingdino.datasets.transforms as T
 
@@ -126,16 +125,14 @@ def _run_grounding_dino(model, image_path: str, text_prompts: list[str],
         box_threshold=box_threshold, text_threshold=text_threshold,
     )
 
-    scale_x = orig_w / frame_w if frame_w > 0 else 1
-    scale_y = orig_h / frame_h if frame_h > 0 else 1
-
+    # predict() returns boxes as normalized cxcywh in [0, 1]; rescale to original video resolution.
     detections = []
     for box, logit, phrase in zip(boxes, logits, phrases):
         cx, cy, w, h = box.tolist()
         detections.append({
             "label": phrase,
-            "bbox": [round((cx - w/2) * frame_w * scale_x), round((cy - h/2) * frame_h * scale_y),
-                     round((cx + w/2) * frame_w * scale_x), round((cy + h/2) * frame_h * scale_y)],
+            "bbox": [round((cx - w/2) * orig_w), round((cy - h/2) * orig_h),
+                     round((cx + w/2) * orig_w), round((cy + h/2) * orig_h)],
             "confidence": round(float(logit), 4),
         })
     return detections
@@ -161,8 +158,6 @@ def run_step6(client: OpenAI, frame_dir: str, segments: list[dict],
     frame_files = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
     if not frame_files:
         raise RuntimeError(f"No frames in {frame_dir}")
-    sample = Image.open(os.path.join(frame_dir, frame_files[0]))
-    frame_w, frame_h = sample.size
 
     model = _load_grounding_dino(config)
 
@@ -183,8 +178,7 @@ def run_step6(client: OpenAI, frame_dir: str, segments: list[dict],
                 continue
             for det in _run_grounding_dino(model, frame_path, text_prompts,
                                            box_threshold, text_threshold,
-                                           metadata["width"], metadata["height"],
-                                           frame_w, frame_h):
+                                           metadata["width"], metadata["height"]):
                 raw_detections.append({"frame_index": kf_idx, **det})
 
         segments[i]["objects"] = _cross_frame_nms(raw_detections, nms_threshold)

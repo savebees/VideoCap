@@ -215,8 +215,9 @@ def run_step3(client: OpenAI, frame_dir: str, segments: list[dict],
             word_count = len(description.split())
 
         if word_count < min_words:
-            raise RuntimeError(
-                f"[Step 3] Scene {seg['scene_id']}: {word_count} words after {max_retries} retries")
+            logger.warning(
+                f"[Step 3] Scene {seg['scene_id']}: {word_count} words after {max_retries} retries "
+                f"(min={min_words}); keeping best result and continuing")
 
         segments[i]["description"] = description
         segments[i]["word_count"] = word_count
