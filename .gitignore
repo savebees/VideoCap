@@ -3,9 +3,11 @@ __pycache__/
 *.egg-info/
 .venv/
 
+.claude
+
 data/
-models/Qwen*/
-models/grounding_dino/*.pth
+models/
+note/
 
 .DS_Store
 *.log
