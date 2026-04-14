@@ -3,7 +3,7 @@ import re
 import subprocess
 
 
-def get_video_metadata(video_path: str) -> dict:
+def extract_metadata(video_path: str) -> dict:
     cmd = [
         "ffprobe", "-v", "quiet",
         "-print_format", "json",

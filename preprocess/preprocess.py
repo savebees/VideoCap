@@ -4,7 +4,7 @@ import json
 import logging
 import os
 
-from utils.video import get_video_metadata
+from utils.video import extract_metadata
 from utils.frames import extract_frames
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ def run_step0(video_path: str, config: dict) -> tuple[dict, str]:
             return json.load(f), frame_dir
 
     logger.info(f"[Step 0] {video_id}: extracting metadata + frames")
-    meta = get_video_metadata(video_path)
+    meta = extract_metadata(video_path)
     assert meta["duration"] > 0, f"Invalid duration: {meta['duration']}"
 
     metadata = {
