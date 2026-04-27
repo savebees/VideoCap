@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "Per-frame Object Detections",
+  "description": "Per-frame object detections deduplicated across frames. Bounding boxes are in pixel coordinates of the extracted frame jpg (after ffmpeg resize to frame_max_long_side).",
+  "type": "object",
+  "required": ["video_id", "frame_extraction_fps", "frame_resolution", "objects", "metadata"],
+  "properties": {
+    "video_id": {"type": "string"},
+    "frame_extraction_fps": {"type": "number", "minimum": 0},
+    "frame_resolution": {"type": "string"},
+    "objects": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["object_id", "frame_index", "frame_timestamp", "scene_id", "label", "bbox", "confidence"],
+        "properties": {
+          "object_id": {"type": "integer", "minimum": 1},
+          "frame_index": {"type": "integer", "minimum": 0},
+          "frame_timestamp": {"type": "number", "minimum": 0},
+          "scene_id": {"type": "integer", "minimum": 1},
+          "label": {"type": "string"},
+          "bbox": {
+            "type": "array",
+            "description": "[x1, y1, x2, y2] in pixel coordinates of the extracted frame jpg.",
+            "items": {"type": "number"},
+            "minItems": 4,
+            "maxItems": 4
+          },
+          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "additionalProperties": false
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["generated_at", "models", "total_objects"],
+      "properties": {
+        "generated_at": {"type": "string"},
+        "models": {
+          "type": "object",
+          "properties": {
+            "vlm": {"type": "string"}
+          }
+        },
+        "total_objects": {"type": "integer", "minimum": 0},
+        "detection_nms_threshold": {"type": "number"},
+        "detection_confidence_floor": {"type": "number"}
+      }
+    }
+  },
+  "additionalProperties": false
+}

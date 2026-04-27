@@ -15,7 +15,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["scene_id", "start", "end", "brief", "description", "word_count", "actions", "objects"],
+        "required": ["scene_id", "start", "end", "brief", "description", "word_count", "actions"],
         "properties": {
           "scene_id": {"type": "integer", "minimum": 1},
           "start": {"type": "number", "minimum": 0},
@@ -38,26 +38,6 @@
               },
               "additionalProperties": false
             }
-          },
-          "objects": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": ["object_id", "label", "bbox", "confidence", "frame_index"],
-              "properties": {
-                "object_id": {"type": "integer", "minimum": 1},
-                "label": {"type": "string"},
-                "bbox": {
-                  "type": "array",
-                  "items": {"type": "number"},
-                  "minItems": 4,
-                  "maxItems": 4
-                },
-                "confidence": {"type": "number", "minimum": 0, "maximum": 1},
-                "frame_index": {"type": "integer", "minimum": 0}
-              },
-              "additionalProperties": false
-            }
           }
         },
         "additionalProperties": false
@@ -65,21 +45,19 @@
     },
     "metadata": {
       "type": "object",
-      "required": ["generated_at", "models", "total_segments", "avg_segment_duration", "total_actions", "avg_actions_per_segment", "total_objects"],
+      "required": ["generated_at", "models", "total_segments", "avg_segment_duration", "total_actions", "avg_actions_per_segment"],
       "properties": {
         "generated_at": {"type": "string"},
         "models": {
           "type": "object",
           "properties": {
-            "vlm": {"type": "string"},
-            "detector": {"type": "string"}
+            "vlm": {"type": "string"}
           }
         },
         "total_segments": {"type": "integer"},
         "avg_segment_duration": {"type": "number"},
         "total_actions": {"type": "integer"},
         "avg_actions_per_segment": {"type": "number"},
-        "total_objects": {"type": "integer"},
         "step1_raw_segments": {"type": "integer"},
         "step2_repairs": {"type": "integer"}
       }

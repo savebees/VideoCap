@@ -1,8 +1,6 @@
 # ── Model ──
 vlm_model: "Qwen3.6-35B-A3B"
 vllm_base_url: "http://localhost:8000/v1"
-grounding_dino_config: "models/grounding_dino/GroundingDINO_SwinT_OGC.py"
-grounding_dino_weights: "models/grounding_dino/groundingdino_swint_ogc.pth"
 
 # ── Preprocessing (Step 0) ──
 video_fps: 1.0
@@ -19,11 +17,11 @@ max_retries_short_desc: 2
 min_action_duration: 0.5
 vlm_max_tokens_step4: 4096
 
-# ── Object Detection (Step 6) ──
-detection_box_threshold: 0.35
-detection_text_threshold: 0.25
-keyframe_strategy: "all"
-detection_nms_threshold: 0.5
+# ── Object Detection (Step 5) ──
+detection_nms_threshold: 0.5            # intra-frame NMS: same label + IoU > this → drop duplicate
+detection_cross_frame_iou: 0.85         # cross-frame clustering: any labels + IoU > this → same physical object
+detection_confidence_floor: 0.3
+vlm_max_tokens_step5: 4096
 
 # ── VLM General ──
 vlm_temperature: 0.7

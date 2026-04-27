@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from preprocess.preprocess import run_step0
 from src.scene_segmentation import run_step1, run_step2, run_step3
 from src.actions import run_step4
-from src.object_detection import run_step6
+from src.object_detection import run_step5
 from utils.vllm_client import get_vlm_client
 
 logger = logging.getLogger(__name__)
@@ -38,14 +38,27 @@ def _timer(timings: dict, key: str):
     timings[key] = round(time.perf_counter() - t, 2)
 
 
-def save_annotation(segments: list[dict], metadata: dict, config: dict,
+def _detect_frame_resolution(config: dict, video_id: str) -> str:
+    """Read the first extracted frame jpg and return its 'WxH' string."""
+    from PIL import Image
+    frame_dir = os.path.join(config["output_dir"], video_id, "frames")
+    if not os.path.isdir(frame_dir):
+        return "unknown"
+    frames = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
+    if not frames:
+        return "unknown"
+    with Image.open(os.path.join(frame_dir, frames[0])) as img:
+        return f"{img.size[0]}x{img.size[1]}"
+
+
+def save_annotation(segments: list[dict], objects: list[dict], metadata: dict, config: dict,
                     step1_raw_count: int, step2_repairs: int,
-                    timings: dict) -> str:
+                    timings: dict) -> tuple[str, str]:
     video_id = metadata["video_id"]
     video_output_dir = os.path.join(config["output_dir"], video_id)
 
     total_actions = sum(len(s.get("actions", [])) for s in segments)
-    total_objects = sum(len(s.get("objects", [])) for s in segments)
+    total_objects = len(objects)
     n = len(segments)
 
     annotation = {
@@ -58,37 +71,62 @@ def save_annotation(segments: list[dict], metadata: dict, config: dict,
         "segments": segments,
         "metadata": {
             "generated_at": datetime.now(timezone.utc).isoformat(),
-            "models": {"vlm": config["vlm_model"], "detector": "GroundingDINO-Swin-T"},
+            "models": {"vlm": config["vlm_model"]},
             "total_segments": n,
             "avg_segment_duration": round(metadata["duration"] / n, 2) if n else 0,
             "total_actions": total_actions,
             "avg_actions_per_segment": round(total_actions / n, 2) if n else 0,
-            "total_objects": total_objects,
             "step1_raw_segments": step1_raw_count,
             "step2_repairs": step2_repairs,
             "timings_sec": timings,
         },
     }
 
-    schema_path = os.path.join(
+    objects_doc = {
+        "video_id": video_id,
+        "frame_extraction_fps": config.get("video_fps", 1.0),
+        "frame_resolution": _detect_frame_resolution(config, video_id),
+        "objects": objects,
+        "metadata": {
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "models": {"vlm": config["vlm_model"]},
+            "total_objects": total_objects,
+            "detection_nms_threshold": config.get("detection_nms_threshold", 0.5),
+            "detection_confidence_floor": config.get("detection_confidence_floor", 0.3),
+        },
+    }
+
+    schema_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "schemas", "annotation.schema.json",
+        "schemas",
     )
-    with open(schema_path) as f:
-        schema = json.load(f)
-    try:
-        jsonschema.validate(instance=annotation, schema=schema)
-    except jsonschema.ValidationError as e:
-        logger.warning(f"Schema validation failed for {video_id}: {e.message} at {list(e.absolute_path)}")
+    annotation_schema_path = os.path.join(schema_dir, "annotation.schema.json")
+    objects_schema_path = os.path.join(schema_dir, "objects.schema.json")
 
-    out_path = os.path.join(video_output_dir, "annotation.json")
-    with open(out_path, "w") as f:
+    for doc, schema_path, label in [
+        (annotation, annotation_schema_path, "annotation"),
+        (objects_doc, objects_schema_path, "objects"),
+    ]:
+        with open(schema_path) as f:
+            schema = json.load(f)
+        try:
+            jsonschema.validate(instance=doc, schema=schema)
+        except jsonschema.ValidationError as e:
+            logger.warning(f"Schema validation failed for {video_id} ({label}): "
+                           f"{e.message} at {list(e.absolute_path)}")
+
+    annotation_path = os.path.join(video_output_dir, "annotation.json")
+    objects_path = os.path.join(video_output_dir, "objects.json")
+    with open(annotation_path, "w") as f:
         json.dump(annotation, f, indent=2, ensure_ascii=False)
-    logger.info(f"Saved annotation to {out_path}")
-    return out_path
+    with open(objects_path, "w") as f:
+        json.dump(objects_doc, f, indent=2, ensure_ascii=False)
+    logger.info(f"Saved annotation to {annotation_path}")
+    logger.info(f"Saved objects to {objects_path}")
+    return annotation_path, objects_path
 
 
-def process_video(video_path: str, config: dict) -> str:
+def process_video(video_path: str, config: dict) -> tuple[str, str]:
     video_id = os.path.splitext(os.path.basename(video_path))[0]
     logger.info(f"{'='*60}\nProcessing: {video_id}\n{'='*60}")
 
@@ -112,9 +150,9 @@ def process_video(video_path: str, config: dict) -> str:
     with _timer(timings, "step4"):
         segments = run_step4(client, frame_dir, segments, metadata, config)
 
-    # object detection (temporarily disabled; re-enable after steps 1-4 are validated)
-    # with _timer(timings, "step6"):
-    #     segments = run_step6(client, frame_dir, segments, metadata, config)
+    # object detection (per-frame, output saved to a separate file)
+    with _timer(timings, "step5"):
+        objects = run_step5(client, frame_dir, segments, metadata, config)
 
     timings["total"] = round(time.perf_counter() - video_t0, 2)
     logger.info(
@@ -122,7 +160,7 @@ def process_video(video_path: str, config: dict) -> str:
         " ".join(f"{k}={v}" for k, v in timings.items())
     )
 
-    return save_annotation(segments, metadata, config,
+    return save_annotation(segments, objects, metadata, config,
                            step1_raw_count, step2_repairs, timings)
 
 
@@ -130,8 +168,8 @@ def clear_cache(video_path: str, config: dict):
     video_id = os.path.splitext(os.path.basename(video_path))[0]
     output_dir = os.path.join(config["output_dir"], video_id)
     for fname in ("step1_segments.json", "step2_validated.json", "step3_captioned.json",
-                  "step4_actions.json", "step6_objects.json",
-                  "annotation.json"):
+                  "step4_actions.json", "step5_objects.json",
+                  "annotation.json", "objects.json"):
         fpath = os.path.join(output_dir, fname)
         if os.path.exists(fpath):
             os.remove(fpath)

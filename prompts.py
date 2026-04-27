@@ -91,11 +91,11 @@ CORE RULES:
 - DO NOT annotate camera movements (pans, zooms, cuts) as actions.
 - Let each action's duration match the natural length of the motion. Do not split a continuous action artificially, and do not merge separate actions.
 
-FORBIDDEN — NO SEMANTIC SPECULATION:
+FORBIDDEN — NO SEMANTIC SPECULATION
 - Describe ONLY what is visually observable.
 - Do NOT use verbs like "explains", "describes", "introduces", "states", "argues", "suggests", "implies".
 - Use visual verbs: "gestures", "walks", "turns head", "smiles", "picks up", "sits down", "raises hand", "looks at".
-- If a person is clearly speaking, say "speaks to the camera" or "speaks while gesturing" — do NOT summarize what they are saying.
+- If a person is clearly speaking, say "speaks to the camera" or "speaks while gesturing". Do NOT summarize what they are saying.
 
 SUBJECT FIELD:
 - A short noun phrase identifying the subject (e.g., "woman in red shirt", "man with cowboy hat", "young boy in teal shirt", "buffet line").
@@ -114,19 +114,45 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences."""
 
 
-# ─── Step 6: Object Prompt Extraction (text-only VLM call) ───
+# ─── Step 5: Per-frame Object Detection (VLM with vision) ───
 
-PROMPT_EXTRACT_OBJECTS = """Extract all visually distinct objects and characters mentioned in the following scene description. Return them as short noun phrases suitable for an object detection model.
+PROMPT_DETECT_OBJECTS = """You are given a single frame from a video clip.
 
-Scene description:
-"{description}"
+This frame belongs to the following scene:
+"{parent_description}"
+{subjects_hint}
 
-Rules:
-- Include people with their distinguishing attributes (e.g., "woman in navy blazer", "man with glasses").
-- Include significant objects (e.g., "wooden podium", "laptop computer", "whiteboard").
-- Do NOT include abstract concepts, actions, or scene-level descriptions.
-- Do NOT include camera movements or lighting descriptions.
-- Each phrase should be 1-5 words, specific enough for visual detection.
+TASK: Detect the KEY objects and people in this frame, and provide a tight bounding box for each.
 
-Output a JSON array of strings, and nothing else:
-["object phrase 1", "object phrase 2", ...]"""
+WHAT COUNTS AS KEY (in priority order):
+1. People actively performing the action described in the scene above.
+2. Objects those people directly interact with (held, touched, used).
+3. Large central objects that define the setting, such as a podium, table, or projector screen.
+
+EXCLUDE:
+- Background or edge people not central to the action, including partially cropped or distant figures.
+- Decorative or structural surfaces filling the frame, such as tablecloths, walls, floors, ceilings, or sky.
+- Body parts in isolation, text overlays, logos, and watermarks.
+- Objects occupying less than about 5% of the frame area, unless they are the focus of the action.
+
+ONE OBJECT = ONE BOX = ONE LABEL.
+Do NOT output overlapping boxes for the same physical object under different names. If a milk carton could be called either "milk carton" or "beverage container", pick the more specific one and output it ONCE.
+
+LABELS:
+- Short noun phrase, 1 to 6 words, concrete (NOT "presentation" or "discussion").
+- When the scene description names an object or person, stay close to that wording. Keep the key identifying attributes such as clothing color, role, or position, but you may shorten a long phrase. For example, "a woman with shoulder-length blonde hair wearing a striped shirt" becomes "woman in striped shirt".
+- Distinguish multiple instances by visible attributes, for example "man in red shirt" versus "man in blue shirt".
+
+BOUNDING BOX:
+- Format [x1, y1, x2, y2], normalized to a 0 to 1000 scale (top-left origin).
+- Tightly enclose the object. For a person, span head to feet, or to the crop or occlusion edge.
+
+CONFIDENCE: float in [0, 1]. Be honest, and use a value below 0.5 when guessing.
+
+OUTPUT: a JSON array, nothing else. No markdown fences, no explanation.
+[
+  {{"label": "...", "bbox_2d": [x1, y1, x2, y2], "confidence": 0.92}}
+]
+
+Be selective. If you find yourself listing many objects, you are likely including non-key items. Recheck and keep only what is essential to the action.
+If nothing key is present (transition or blank frame), output []."""
