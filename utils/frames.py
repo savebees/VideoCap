@@ -46,7 +46,7 @@ def build_video_content(
     start_time: float | None = None,
     end_time: float | None = None,
 ) -> tuple[dict, int]:
-    
+
     frame_files = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
 
     if start_time is not None and end_time is not None:

@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from preprocess.preprocess import run_step0
 from src.scene_segmentation import run_step1, run_step2, run_step3
-from src.atomic_events import run_step4, run_step5
+from src.actions import run_step4
 from src.object_detection import run_step6
 from utils.vllm_client import get_vlm_client
 
@@ -39,12 +39,12 @@ def _timer(timings: dict, key: str):
 
 
 def save_annotation(segments: list[dict], metadata: dict, config: dict,
-                    step1_raw_count: int, step2_repairs: int, step5_repairs: int,
+                    step1_raw_count: int, step2_repairs: int,
                     timings: dict) -> str:
     video_id = metadata["video_id"]
     video_output_dir = os.path.join(config["output_dir"], video_id)
 
-    total_events = sum(len(s.get("events", [])) for s in segments)
+    total_actions = sum(len(s.get("actions", [])) for s in segments)
     total_objects = sum(len(s.get("objects", [])) for s in segments)
     n = len(segments)
 
@@ -61,12 +61,11 @@ def save_annotation(segments: list[dict], metadata: dict, config: dict,
             "models": {"vlm": config["vlm_model"], "detector": "GroundingDINO-Swin-T"},
             "total_segments": n,
             "avg_segment_duration": round(metadata["duration"] / n, 2) if n else 0,
-            "total_events": total_events,
-            "avg_events_per_segment": round(total_events / n, 2) if n else 0,
+            "total_actions": total_actions,
+            "avg_actions_per_segment": round(total_actions / n, 2) if n else 0,
             "total_objects": total_objects,
             "step1_raw_segments": step1_raw_count,
             "step2_repairs": step2_repairs,
-            "step5_repairs": step5_repairs,
             "timings_sec": timings,
         },
     }
@@ -109,15 +108,13 @@ def process_video(video_path: str, config: dict) -> str:
     with _timer(timings, "step3"):
         segments = run_step3(client, frame_dir, segments, metadata, config)
 
-    # atomic events
+    # actions
     with _timer(timings, "step4"):
         segments = run_step4(client, frame_dir, segments, metadata, config)
-    with _timer(timings, "step5"):
-        segments, step5_repairs = run_step5(segments, metadata, config)
 
-    # object detection
-    with _timer(timings, "step6"):
-        segments = run_step6(client, frame_dir, segments, metadata, config)
+    # object detection (temporarily disabled; re-enable after steps 1-4 are validated)
+    # with _timer(timings, "step6"):
+    #     segments = run_step6(client, frame_dir, segments, metadata, config)
 
     timings["total"] = round(time.perf_counter() - video_t0, 2)
     logger.info(
@@ -126,14 +123,14 @@ def process_video(video_path: str, config: dict) -> str:
     )
 
     return save_annotation(segments, metadata, config,
-                           step1_raw_count, step2_repairs, step5_repairs, timings)
+                           step1_raw_count, step2_repairs, timings)
 
 
 def clear_cache(video_path: str, config: dict):
     video_id = os.path.splitext(os.path.basename(video_path))[0]
     output_dir = os.path.join(config["output_dir"], video_id)
     for fname in ("step1_segments.json", "step2_validated.json", "step3_captioned.json",
-                  "step4_events.json", "step5_events_validated.json", "step6_objects.json",
+                  "step4_actions.json", "step6_objects.json",
                   "annotation.json"):
         fpath = os.path.join(output_dir, fname)
         if os.path.exists(fpath):

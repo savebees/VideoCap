@@ -2,48 +2,63 @@
 
 PROMPT_SEGMENT = """You are given {num_frames} frames (sampled at 1 fps) from a video that is {duration:.1f} seconds long.
 
-YOUR TASK: Divide this video into coherent scene segments. A scene is a continuous sequence of frames sharing the same visual setting, activity, or subject.
+YOUR TASK: Divide this video into major scene segments. A "scene" is a continuous sequence where the overall setting, location, and primary subject remain the same. Minor changes like camera pans, zooms, or a person shifting position do NOT constitute a new scene.
+
+WHEN TO CUT:
+- The location or environment changes (e.g., indoors → outdoors, office → street)
+- The primary subject changes completely (e.g., speaker A → speaker B at a different location)
+- There is a hard edit cut to a visually distinct shot
+
+WHEN NOT TO CUT:
+- Camera movement within the same location (pan, tilt, zoom, tracking)
+- Minor activity changes by the same subject in the same location
+- Lighting or color shifts without a location change
+- Text overlays or captions appearing over the same scene
 
 GUIDELINES:
-- Target ~5-15 seconds per segment. Shorter segments are acceptable for rapid scene changes.
-- Each segment must have clear visual coherence — same location, same activity, same camera angle.
-- Place boundaries at visual transitions: location changes, camera cuts, subject changes, or major activity shifts.
+- You MUST cover the ENTIRE video from 0.0 to {duration:.1f}. Do NOT stop early.
 
 OUTPUT FORMAT: A JSON array, and nothing else:
 [
-  {{"scene_id": 1, "start": 0.0, "end": ..., "brief": "1-2 sentence summary"}},
-  {{"scene_id": 2, "start": ..., "end": ..., "brief": "1-2 sentence summary"}},
+  {{"scene_id": 1, "start": 0.0, "end": ..., "brief": "1-2 sentence description"}},
   ...
 ]
 
 RULES:
-- FULL COVERAGE: First segment starts at 0.0, last segment ends at {duration:.1f}. No gaps allowed.
+- FULL COVERAGE: First segment starts at 0.0, last segment ends at {duration:.1f}. No gaps.
 - CONTINUITY: Each segment's start must exactly equal the previous segment's end.
-- TIMESTAMPS: Use seconds with one decimal place.
-- BRIEF: 1-2 sentence summary of what happens in the segment.
+- TIMESTAMPS: Seconds with one decimal place.
+- BRIEF: Direct description of what happens. Do NOT start with labels like "Short summary:", "Scene:", or "Brief:". Just write the content.
 - Output ONLY the JSON array. No explanation, no markdown fences."""
 
 
 # ─── Step 3: Dense Captioning with Prefix Context ───
 
-PROMPT_CAPTION = """You are a professional video annotator. Describe this video clip in detail.
+PROMPT_CAPTION = """You are a professional video annotator. Describe this video clip in rich, specific detail.
 
 {prefix_context}
 
 You are given {num_frames} frames (1 fps) from a video clip [{start:.1f}s - {end:.1f}s].
 
-Your description MUST cover ALL of the following five dimensions:
-1. SHORT SUMMARY: A 1-2 sentence overview of what happens
-2. BACKGROUND & ENVIRONMENT: The setting, lighting, weather, indoor/outdoor details
-3. MAIN OBJECTS & CHARACTERS: Who/what is present, their appearance, clothing, distinguishing attributes
-4. CAMERA MOVEMENT: Static, panning, zooming, handheld, tracking, etc.
-5. DETAILED TEMPORAL EVENTS: Every action and state change in chronological order
+Your description must weave together the following aspects into a single flowing narrative:
+- What happens overall
+- The setting and environment (location, lighting, indoor/outdoor, atmosphere)
+- Who and what is present (people's appearance, clothing, distinguishing features; key objects)
+- How the camera behaves (static, panning, zooming, handheld, tracking)
+- The sequence of actions and state changes over time
 
-Rules:
-- Your description must be at least 100 words.
-- Be specific: "a woman in a navy blue apron standing at a marble countertop" not "a person in a kitchen".
-- If previous scenes are listed above, DO NOT re-describe objects, settings, or characters already mentioned there. Focus on what is NEW or CHANGED.
-- Output ONLY the description text. Do not wrap it in JSON or add any other formatting."""
+CRITICAL FORMAT RULES:
+- Write as continuous prose paragraphs. No section headings. No numbered lists. No bold labels. No markdown.
+- Do NOT start with labels like "Summary:", "Description:", or "1.". Begin directly with the content.
+- Minimum 100 words.
+
+CONTENT RULES:
+- Be specific and concrete: "a woman in a navy blue apron at a marble countertop" not "a person in a kitchen".
+- If previous scenes are listed above, do NOT re-describe objects, settings, or characters already mentioned. Focus on what is NEW or CHANGED.
+- Describe ONLY what is visible. Do NOT speculate, infer, or guess. Avoid phrases like "possibly", "might be", "suggests", "implies", "appears to be a [venue/event type]". 
+- DO NOT fabricate or imagine any details that are not directly visible in the frames. If you cannot see it clearly, do not mention it.
+
+Output ONLY the description text."""
 
 
 PROMPT_CAPTION_RETRY = """Your previous description of this video clip was too short ({word_count} words).
@@ -59,35 +74,44 @@ Please rewrite and EXPAND this description to at least 100 words. Add more visua
 Output ONLY the expanded description text."""
 
 
-# ─── Step 4: Atomic Event Segmentation ───
+# ─── Step 4: Action Annotation ───
 
-PROMPT_ATOMIC_EVENTS = """You are given {num_frames} frames (1 fps) from a video clip [{start:.1f}s - {end:.1f}s], which is {duration:.1f} seconds long.
+PROMPT_ACTIONS = """You are given {num_frames} frames (1 fps) from a video clip [{start:.1f}s - {end:.1f}s], which is {duration:.1f} seconds long.
 
 This clip belongs to the following scene:
 "{parent_description}"
 
-YOUR TASK: Divide this clip into atomic events — short sub-segments (typically 2-5 seconds each) where each segment captures exactly ONE action, motion, or visual state.
+YOUR TASK: Annotate the visible actions happening in this clip. An action is a coherent motion or state performed by ONE specific visual subject.
 
-Examples of atomic events:
-- "A woman picks up a knife from the counter."
-- "The camera pans left across a mountain range."
-- "A man sits down on a bench."
-- "Text overlay appears showing the university logo."
-- "The person waves at the camera while smiling."
+CORE RULES:
+- ONE SUBJECT PER ACTION. If two people are doing things at the same time, create two separate actions, one for each.
+- Actions CAN overlap in time. Two concurrent actions by different subjects should have overlapping time windows.
+- Actions do NOT need to cover the entire clip. Quiet moments with no notable action can be left unannotated.
+- Only annotate VISUALLY SALIENT subjects: people or objects in the foreground, performing clear actions, or occupying significant screen space. Ignore background crowds and peripheral activity.
+- DO NOT annotate camera movements (pans, zooms, cuts) as actions.
+- Let each action's duration match the natural length of the motion. Do not split a continuous action artificially, and do not merge separate actions.
+
+FORBIDDEN — NO SEMANTIC SPECULATION:
+- Describe ONLY what is visually observable.
+- Do NOT use verbs like "explains", "describes", "introduces", "states", "argues", "suggests", "implies".
+- Use visual verbs: "gestures", "walks", "turns head", "smiles", "picks up", "sits down", "raises hand", "looks at".
+- If a person is clearly speaking, say "speaks to the camera" or "speaks while gesturing" — do NOT summarize what they are saying.
+
+SUBJECT FIELD:
+- A short noun phrase identifying the subject (e.g., "woman in red shirt", "man with cowboy hat", "young boy in teal shirt", "buffet line").
+- Be specific enough that the subject is uniquely identifiable within the clip.
+
+OUTPUT FORMAT: A JSON array, and nothing else:
+[
+  {{"action_id": 1, "start": ..., "end": ..., "subject": "...", "description": "..."}},
+  {{"action_id": 2, "start": ..., "end": ..., "subject": "...", "description": "..."}},
+  ...
+]
 
 RULES:
-- FULL COVERAGE: Events must cover [{start:.1f}s - {end:.1f}s] with no gaps. First event starts at {start:.1f}s, last event ends at {end:.1f}s.
-- CONTINUITY: Each event's start must exactly equal the previous event's end.
-- DURATION: Each event should be 1-5 seconds. If a single action takes longer than 5 seconds (e.g., a person talking continuously), it is acceptable to have one longer event rather than artificially splitting it.
-- ONE ACTION PER EVENT: Each event should describe exactly one atomic action or state. Not "she picks up a knife and starts chopping" — that is two events.
-- DESCRIPTIONS: One sentence per event. Be specific and concrete. Use present tense.
-- TIMESTAMPS: Use ABSOLUTE timestamps relative to the original video.
-
-Output a JSON array and nothing else:
-[
-  {{"event_id": 1, "start": {start:.1f}, "end": ..., "description": "..."}},
-  ...
-]"""
+- TIMESTAMPS: Use ABSOLUTE timestamps relative to the original video, with one decimal place. Must be within [{start:.1f}, {end:.1f}].
+- DESCRIPTIONS: One sentence, present tense, specific and concrete.
+- Output ONLY the JSON array. No explanation, no markdown fences."""
 
 
 # ─── Step 6: Object Prompt Extraction (text-only VLM call) ───

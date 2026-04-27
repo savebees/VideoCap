@@ -4,14 +4,24 @@ import copy
 import json
 import logging
 import os
+import re
 
 from openai import OpenAI
 
-from prompts import PROMPT_SEGMENT, PROMPT_CAPTION, PROMPT_CAPTION_RETRY
+from prompts import (
+    PROMPT_SEGMENT,
+    PROMPT_CAPTION,
+    PROMPT_CAPTION_RETRY,
+)
 from utils.frames import build_video_content
 from utils.video import parse_json_array
+from utils.vllm_client import get_extra_body
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_thinking(text: str) -> str:
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 # ─── Step 1 ───
@@ -24,8 +34,35 @@ def _parse_segments(raw_text: str) -> list[dict]:
     return segments
 
 
+def _vlm_segment_call(client: OpenAI, video_content: dict, prompt: str,
+                      config: dict, tag: str) -> list[dict]:
+    """Single VLM segmentation call with parse + retry. Returns parsed segments."""
+    max_retries = config.get("max_retries", 3)
+    last_exc: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        logger.info(f"{tag} (attempt {attempt})")
+        response = client.chat.completions.create(
+            model=config["vlm_model"],
+            messages=[{"role": "user", "content": [
+                video_content, {"type": "text", "text": prompt},
+            ]}],
+            temperature=config.get("vlm_temperature", 0.0),
+            top_p=config.get("vlm_top_p", 0.8),
+            presence_penalty=config.get("vlm_presence_penalty", 0.0),
+            max_tokens=config.get("vlm_max_tokens_step1", 4096),
+            extra_body=get_extra_body(config),
+        )
+        raw_text = _strip_thinking(response.choices[0].message.content or "")
+        try:
+            return _parse_segments(raw_text)
+        except (json.JSONDecodeError, AssertionError) as e:
+            logger.warning(f"{tag} parse failed (attempt {attempt}): {e}")
+            last_exc = e
+    raise RuntimeError(f"{tag} failed after {max_retries} retries") from last_exc
+
+
 def run_step1(client: OpenAI, frame_dir: str, metadata: dict, config: dict) -> list[dict]:
-    """Single VLM call to segment the entire video into scenes."""
+    """Single-pass scene segmentation."""
     video_id = metadata["video_id"]
     cache_path = os.path.join(config["output_dir"], video_id, "step1_segments.json")
 
@@ -36,27 +73,14 @@ def run_step1(client: OpenAI, frame_dir: str, metadata: dict, config: dict) -> l
 
     fps = config.get("video_fps", 1.0)
     video_content, num_frames = build_video_content(frame_dir, fps)
-    prompt = PROMPT_SEGMENT.format(num_frames=num_frames, duration=metadata["duration"])
-
-    max_retries = config.get("max_retries", 3)
-    for attempt in range(1, max_retries + 1):
-        logger.info(f"[Step 1] {video_id}: segmentation (attempt {attempt})")
-        response = client.chat.completions.create(
-            model=config["vlm_model"],
-            messages=[{"role": "user", "content": [
-                video_content, {"type": "text", "text": prompt},
-            ]}],
-            temperature=config.get("vlm_temperature", 0.0),
-            max_tokens=config.get("vlm_max_tokens_step1", 4096),
-        )
-        raw_text = response.choices[0].message.content or ""
-        try:
-            segments = _parse_segments(raw_text)
-            break
-        except (json.JSONDecodeError, AssertionError) as e:
-            logger.warning(f"[Step 1] Parse failed (attempt {attempt}): {e}")
-            if attempt == max_retries:
-                raise RuntimeError from e
+    prompt = PROMPT_SEGMENT.format(
+        num_frames=num_frames,
+        duration=metadata["duration"],
+    )
+    segments = _vlm_segment_call(
+        client, video_content, prompt, config,
+        tag=f"[Step 1] {video_id}: segmentation",
+    )
 
     with open(cache_path, "w") as f:
         json.dump(segments, f, indent=2)
@@ -77,7 +101,6 @@ def run_step2(segments: list[dict], duration: float, config: dict, video_id: str
 
     segments = copy.deepcopy(segments)
     repairs = 0
-    min_dur = config.get("min_segment_duration", 3.0)
 
     segments.sort(key=lambda s: s["start"])
 
@@ -100,35 +123,6 @@ def run_step2(segments: list[dict], duration: float, config: dict, video_id: str
             segments[i + 1]["start"] = mid
         else:
             segments[i]["end"] = segments[i + 1]["start"]
-
-    # Merge short segments
-    changed = True
-    while changed:
-        changed = False
-        i = 0
-        while i < len(segments):
-            seg_dur = segments[i]["end"] - segments[i]["start"]
-            if seg_dur < min_dur and len(segments) > 1:
-                if i == 0:
-                    ni = 1
-                elif i == len(segments) - 1:
-                    ni = i - 1
-                else:
-                    left = segments[i - 1]["end"] - segments[i - 1]["start"]
-                    right = segments[i + 1]["end"] - segments[i + 1]["start"]
-                    ni = i - 1 if left <= right else i + 1
-
-                if ni < i:
-                    segments[ni]["end"] = segments[i]["end"]
-                    segments[ni]["brief"] += " " + segments[i]["brief"]
-                else:
-                    segments[ni]["start"] = segments[i]["start"]
-                    segments[ni]["brief"] = segments[i]["brief"] + " " + segments[ni]["brief"]
-                segments.pop(i)
-                changed = True
-                repairs += 1
-            else:
-                i += 1
 
     # Final cleanup
     for i in range(len(segments) - 1):
@@ -168,9 +162,12 @@ def _vlm_call(client: OpenAI, video_content: dict, prompt_text: str, config: dic
             video_content, {"type": "text", "text": prompt_text},
         ]}],
         temperature=config.get("vlm_temperature", 0.0),
+        top_p=config.get("vlm_top_p", 0.8),
+        presence_penalty=config.get("vlm_presence_penalty", 0.0),
         max_tokens=config.get("vlm_max_tokens_step3", 2048),
+        extra_body=get_extra_body(config),
     )
-    return response.choices[0].message.content.strip()
+    return _strip_thinking(response.choices[0].message.content or "")
 
 
 def run_step3(client: OpenAI, frame_dir: str, segments: list[dict],

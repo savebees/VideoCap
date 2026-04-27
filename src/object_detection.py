@@ -12,8 +12,13 @@ from PIL import Image
 
 from prompts import PROMPT_EXTRACT_OBJECTS
 from utils.video import parse_json_array
+from utils.vllm_client import get_extra_body
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_thinking(text: str) -> str:
+    return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
 def _get_frame_indices(start: float, end: float, fps: float, strategy: str) -> list[int]:
@@ -77,10 +82,13 @@ def _extract_object_prompts_vlm(client: OpenAI, description: str, config: dict) 
     response = client.chat.completions.create(
         model=config["vlm_model"],
         messages=[{"role": "user", "content": PROMPT_EXTRACT_OBJECTS.format(description=description)}],
-        temperature=0.0,
+        temperature=config.get("vlm_temperature", 0.0),
+        top_p=config.get("vlm_top_p", 0.8),
+        presence_penalty=config.get("vlm_presence_penalty", 0.0),
         max_tokens=512,
+        extra_body=get_extra_body(config),
     )
-    raw = response.choices[0].message.content or ""
+    raw = _strip_thinking(response.choices[0].message.content or "")
     try:
         result = parse_json_array(raw)
         if isinstance(result, list) and all(isinstance(x, str) for x in result):

@@ -41,4 +41,13 @@ def parse_json_array(raw_text: str) -> list:
     match = re.search(r"\[.*\]", raw_text, re.DOTALL)
     if match is None:
         raise json.JSONDecodeError("No JSON array found", raw_text, 0)
-    return json.loads(match.group(0))
+    text = match.group(0)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Qwen sometimes emits JSON with every inner quote backslash-escaped
+        # (e.g. {\"event_id\": 1}) and occasionally a stray '"' immediately
+        # after a closing '}'. Normalize both before retrying.
+        repaired = text.replace('\\"', '"')
+        repaired = re.sub(r'}"(\s*[,\]])', r'}\1', repaired)
+        return json.loads(repaired)

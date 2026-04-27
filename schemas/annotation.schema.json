@@ -1,6 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "Dense Video Annotation",
+  "description": "Actions may overlap and do not need to cover the full scene duration.",
   "type": "object",
   "required": ["video_id", "duration", "fps", "resolution", "codec", "file_size_mb", "segments", "metadata"],
   "properties": {
@@ -14,7 +15,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["scene_id", "start", "end", "brief", "description", "word_count", "events", "objects"],
+        "required": ["scene_id", "start", "end", "brief", "description", "word_count", "actions", "objects"],
         "properties": {
           "scene_id": {"type": "integer", "minimum": 1},
           "start": {"type": "number", "minimum": 0},
@@ -22,15 +23,17 @@
           "brief": {"type": "string"},
           "description": {"type": "string"},
           "word_count": {"type": "integer", "minimum": 0},
-          "events": {
+          "actions": {
             "type": "array",
+            "description": "Visual actions by salient subjects. May overlap; gaps allowed.",
             "items": {
               "type": "object",
-              "required": ["event_id", "start", "end", "description"],
+              "required": ["action_id", "start", "end", "subject", "description"],
               "properties": {
-                "event_id": {"type": "integer", "minimum": 1},
+                "action_id": {"type": "integer", "minimum": 1},
                 "start": {"type": "number", "minimum": 0},
                 "end": {"type": "number", "minimum": 0},
+                "subject": {"type": "string"},
                 "description": {"type": "string"}
               },
               "additionalProperties": false
@@ -62,7 +65,7 @@
     },
     "metadata": {
       "type": "object",
-      "required": ["generated_at", "models", "total_segments", "avg_segment_duration", "total_events", "avg_events_per_segment", "total_objects"],
+      "required": ["generated_at", "models", "total_segments", "avg_segment_duration", "total_actions", "avg_actions_per_segment", "total_objects"],
       "properties": {
         "generated_at": {"type": "string"},
         "models": {
@@ -74,12 +77,11 @@
         },
         "total_segments": {"type": "integer"},
         "avg_segment_duration": {"type": "number"},
-        "total_events": {"type": "integer"},
-        "avg_events_per_segment": {"type": "number"},
+        "total_actions": {"type": "integer"},
+        "avg_actions_per_segment": {"type": "number"},
         "total_objects": {"type": "integer"},
         "step1_raw_segments": {"type": "integer"},
-        "step2_repairs": {"type": "integer"},
-        "step5_repairs": {"type": "integer"}
+        "step2_repairs": {"type": "integer"}
       }
     }
   },
