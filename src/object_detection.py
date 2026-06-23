@@ -37,33 +37,52 @@ def _box_area(box: list) -> float:
     return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
 
 
-def _intra_frame_nms(detections: list[dict], iou_threshold: float) -> list[dict]:
-    """Within a single frame, drop duplicate boxes for the same label.
+# Boxes this similar are the same physical object even when the model labelled
+# them differently ("man in black jacket" vs "person in dark jacket"). The high
+# bar spares genuinely distinct overlaps, e.g. a person and the bag they hold.
+_CROSS_LABEL_IOU_THRESHOLD = 0.9
 
-    Same label + IoU > threshold means the model output two boxes for what is
-    almost certainly the same physical object. Qwen3-VL grounding emits no
-    confidence, so keep the larger (more complete) box.
+
+def _greedy_suppress(dets: list[dict], iou_threshold: float) -> list[dict]:
+    """Greedy NMS over boxes pre-sorted by descending area: keep each surviving
+    box and suppress later boxes overlapping it beyond iou_threshold (so the
+    larger box wins, since Qwen3-VL grounding emits no confidence)."""
+    kept = []
+    suppressed = [False] * len(dets)
+    for i in range(len(dets)):
+        if suppressed[i]:
+            continue
+        kept.append(dets[i])
+        for j in range(i + 1, len(dets)):
+            if not suppressed[j] and _iou(dets[i]["bbox"], dets[j]["bbox"]) > iou_threshold:
+                suppressed[j] = True
+    return kept
+
+
+def _intra_frame_nms(detections: list[dict], iou_threshold: float) -> list[dict]:
+    """Within a single frame, drop duplicate boxes for the same physical object.
+
+    Two passes, both keeping the larger (more complete) box:
+      1. Same-label: same label + IoU > iou_threshold is a duplicate.
+      2. Cross-label: near-identical boxes (IoU > _CROSS_LABEL_IOU_THRESHOLD)
+         are the same object even when their labels drifted. The high threshold
+         preserves distinct overlapping objects (a person and the bag they hold).
     """
     if not detections:
         return []
 
+    # Pass 1 — per-label dedup.
     by_label: dict[str, list[dict]] = {}
     for det in detections:
         by_label.setdefault(det["label"], []).append(det)
-
     kept = []
-    for label, dets in by_label.items():
+    for dets in by_label.values():
         dets.sort(key=lambda d: _box_area(d["bbox"]), reverse=True)
-        suppressed = [False] * len(dets)
-        for i in range(len(dets)):
-            if suppressed[i]:
-                continue
-            kept.append(dets[i])
-            for j in range(i + 1, len(dets)):
-                if not suppressed[j] and _iou(dets[i]["bbox"], dets[j]["bbox"]) > iou_threshold:
-                    suppressed[j] = True
+        kept.extend(_greedy_suppress(dets, iou_threshold))
 
-    return kept
+    # Pass 2 — cross-label dedup of near-identical boxes.
+    kept.sort(key=lambda d: _box_area(d["bbox"]), reverse=True)
+    return _greedy_suppress(kept, max(iou_threshold, _CROSS_LABEL_IOU_THRESHOLD))
 
 
 def _frame_to_data_url(frame_path: str) -> str:
@@ -104,12 +123,13 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
     img = Image.open(frame_path)
     frame_w, frame_h = img.size
 
-    subjects_hint = _build_subjects_hint(scene.get("actions", []))
     prompts = get_prompts(config.get("dataset_type"))
-    prompt = prompts.PROMPT_DETECT_OBJECTS.format(
-        parent_description=scene["description"],
-        subjects_hint=subjects_hint,
-    )
+    template = prompts.PROMPT_DETECT_OBJECTS
+    fmt = {"parent_description": scene["description"]}
+    # subjects_hint exists only in the general template, not the NWPU one.
+    if "{subjects_hint}" in template:
+        fmt["subjects_hint"] = _build_subjects_hint(scene.get("actions", []))
+    prompt = template.format(**fmt)
     image_url = _frame_to_data_url(frame_path)
 
     max_retries = config.get("max_retries", 3)

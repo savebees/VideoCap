@@ -6,10 +6,11 @@ fixed: no pans, zooms, cuts, or scene changes. These prompts tune the generic
 surveillance prompts for that setting. Anything not defined here falls back to
 ``prompts.general``.
 
-Placeholders MUST match the general templates so str.format() stays compatible:
+A template only declares the placeholders it uses; the detection code fills
+subjects_hint solely when present, so this surveillance prompt omits it:
 - PROMPT_CAPTION_SURVEILLANCE: {prefix_context} {num_frames} {start} {end}
 - PROMPT_ACTIONS_SURVEILLANCE:  {num_frames} {start} {end} {duration}
-- PROMPT_DETECT_OBJECTS:        {parent_description} {subjects_hint}
+- PROMPT_DETECT_OBJECTS:        {parent_description}
 """
 
 # ─── Dense Captioning ───
