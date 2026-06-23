@@ -95,7 +95,6 @@ def save_annotation(segments: list[dict], objects: list[dict], metadata: dict, c
             "models": {"vlm": config["vlm_model"]},
             "total_objects": total_objects,
             "detection_nms_threshold": config.get("detection_nms_threshold", 0.5),
-            "detection_confidence_floor": config.get("detection_confidence_floor", 0.3),
         },
     }
 

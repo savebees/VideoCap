@@ -44,7 +44,7 @@ def draw_frame(img: Image.Image, dets: list[dict], font: ImageFont.ImageFont) ->
         color = color_for_label(d["label"])
         draw.rectangle([x1, y1, x2, y2], outline=color + (255,), width=3)
 
-        text = f"{d['label']} {d['confidence']:.2f}"
+        text = d["label"]
         tx0, ty0, tx1, ty1 = draw.textbbox((0, 0), text, font=font)
         tw, th = tx1 - tx0, ty1 - ty0
         ly = max(0, y1 - th - 4)

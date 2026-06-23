@@ -12,7 +12,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["object_id", "frame_index", "frame_timestamp", "scene_id", "label", "bbox", "confidence"],
+        "required": ["object_id", "frame_index", "frame_timestamp", "scene_id", "label", "bbox"],
         "properties": {
           "object_id": {"type": "integer", "minimum": 1},
           "frame_index": {"type": "integer", "minimum": 0},
@@ -25,8 +25,7 @@
             "items": {"type": "number"},
             "minItems": 4,
             "maxItems": 4
-          },
-          "confidence": {"type": "number", "minimum": 0, "maximum": 1}
+          }
         },
         "additionalProperties": false
       }
@@ -42,8 +41,7 @@
           }
         },
         "total_objects": {"type": "integer", "minimum": 0},
-        "detection_nms_threshold": {"type": "number"},
-        "detection_confidence_floor": {"type": "number"}
+        "detection_nms_threshold": {"type": "number"}
       }
     }
   },

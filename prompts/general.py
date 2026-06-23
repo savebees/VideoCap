@@ -221,11 +221,9 @@ BOUNDING BOX:
 - Format [x1, y1, x2, y2], normalized to a 0 to 1000 scale (top-left origin).
 - Tightly enclose the object. For a person, span head to feet, or to the crop or occlusion edge.
 
-CONFIDENCE: float in [0, 1]. Be honest, and use a value below 0.5 when guessing.
-
 OUTPUT: a JSON array, nothing else. No markdown fences, no explanation.
 [
-  {{"label": "...", "bbox_2d": [x1, y1, x2, y2], "confidence": 0.92}}
+  {{"bbox_2d": [x1, y1, x2, y2], "label": "..."}}
 ]
 
 Be selective. If you find yourself listing many objects, you are likely including non-key items. Recheck and keep only what is essential to the action.

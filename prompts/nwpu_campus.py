@@ -123,11 +123,9 @@ BOUNDING BOX:
 - Format [x1, y1, x2, y2], normalized to a 0 to 1000 scale (top-left origin).
 - Tightly enclose the subject. For a person, span head to feet, or to the crop/occlusion edge.
 
-CONFIDENCE: float in [0, 1]. For a person or vehicle you can clearly see, be confident (0.8 or higher). Use a value below 0.5 only when you are genuinely unsure whether it is a person/object at all.
-
 OUTPUT: a JSON array, nothing else. No markdown fences, no explanation.
 [
-  {{"label": "...", "bbox_2d": [x1, y1, x2, y2], "confidence": 0.92}}
+  {{"bbox_2d": [x1, y1, x2, y2], "label": "..."}}
 ]
 
 Output [] ONLY when there are genuinely no visible people, cyclists, or vehicles (a truly empty walkway, road, or plaza). If even ONE person is visible anywhere in the frame, the array MUST NOT be empty."""

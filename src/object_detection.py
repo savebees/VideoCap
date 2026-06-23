@@ -33,11 +33,16 @@ def _iou(box_a: list, box_b: list) -> float:
     return inter / union if union > 0 else 0
 
 
+def _box_area(box: list) -> float:
+    return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
+
+
 def _intra_frame_nms(detections: list[dict], iou_threshold: float) -> list[dict]:
     """Within a single frame, drop duplicate boxes for the same label.
 
     Same label + IoU > threshold means the model output two boxes for what is
-    almost certainly the same physical object. Keep the higher-confidence one.
+    almost certainly the same physical object. Qwen3-VL grounding emits no
+    confidence, so keep the larger (more complete) box.
     """
     if not detections:
         return []
@@ -48,7 +53,7 @@ def _intra_frame_nms(detections: list[dict], iou_threshold: float) -> list[dict]
 
     kept = []
     for label, dets in by_label.items():
-        dets.sort(key=lambda d: d["confidence"], reverse=True)
+        dets.sort(key=lambda d: _box_area(d["bbox"]), reverse=True)
         suppressed = [False] * len(dets)
         for i in range(len(dets)):
             if suppressed[i]:
@@ -127,10 +132,8 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
             items = parse_json_array(raw)
             results = []
             for item in items:
-                # Qwen3-VL native grounding reliably emits label + bbox_2d, but is
-                # inconsistent about confidence (often omitted entirely). Requiring
-                # it would silently drop every box in such frames. Treat confidence
-                # as optional and default to 1.0 — the model chose to emit the box.
+                # Qwen3-VL native grounding emits only label + bbox_2d (no
+                # confidence — matching the official grounding format).
                 if "label" not in item or "bbox_2d" not in item:
                     continue
                 bb = item["bbox_2d"]
@@ -149,7 +152,6 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
                 results.append({
                     "label": str(item["label"]).strip(),
                     "bbox": [x1, y1, x2, y2],
-                    "confidence": round(float(item.get("confidence", 1.0)), 4),
                 })
             deduped = _intra_frame_nms(results, nms_threshold)
             if len(deduped) < len(results):
@@ -177,7 +179,6 @@ def run_detection(client: OpenAI, frame_dir: str, segments: list[dict],
             return json.load(f)
 
     fps = config.get("video_fps", 1.0)
-    confidence_floor = config.get("detection_confidence_floor", 0.3)
     concurrency = max(1, int(config.get("detection_concurrency", 8)))
     # detection_nms_threshold is read directly inside _detect_one_frame for intra-frame NMS.
 
@@ -186,7 +187,7 @@ def run_detection(client: OpenAI, frame_dir: str, segments: list[dict],
         raise RuntimeError(f"No frames in {frame_dir}")
 
     def _process_frame(fname: str) -> list[dict]:
-        """Detect one frame. Returns confidence-filtered detections with frame metadata."""
+        """Detect one frame. Returns detections tagged with frame metadata."""
         frame_index = int(os.path.splitext(fname)[0])
         frame_timestamp = round(frame_index / fps, 2)
         scene = _scene_for_frame(frame_timestamp, segments)
@@ -204,7 +205,6 @@ def run_detection(client: OpenAI, frame_dir: str, segments: list[dict],
                 **d,
             }
             for d in detections
-            if d["confidence"] >= confidence_floor
         ]
         logger.info(f"[Detection] {video_id}: frame {frame_index} -> {len(detections)} dets")
         return out
@@ -215,7 +215,7 @@ def run_detection(client: OpenAI, frame_dir: str, segments: list[dict],
         for dets in pool.map(_process_frame, frame_files):
             raw_detections.extend(dets)
 
-    raw_detections.sort(key=lambda d: (d["frame_index"], -d["confidence"]))
+    raw_detections.sort(key=lambda d: (d["frame_index"], -_box_area(d["bbox"])))
     final = [{
         "object_id": idx,
         "frame_index": d["frame_index"],
@@ -223,7 +223,6 @@ def run_detection(client: OpenAI, frame_dir: str, segments: list[dict],
         "scene_id": d["scene_id"],
         "label": d["label"],
         "bbox": d["bbox"],
-        "confidence": d["confidence"],
     } for idx, d in enumerate(raw_detections, start=1)]
 
     with open(cache_path, "w") as f:

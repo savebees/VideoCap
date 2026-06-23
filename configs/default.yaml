@@ -38,8 +38,7 @@ vlm_temperature_actions: 0.2            # structured JSON: low temp, no presence
 vlm_presence_penalty_actions: 0.0
 
 # ── Object Detection ──
-detection_nms_threshold: 0.5            # intra-frame NMS: same label + IoU > this → drop duplicate
-detection_confidence_floor: 0.7
+detection_nms_threshold: 0.5            # intra-frame NMS: same label + IoU > this → drop duplicate (keep larger box)
 vlm_max_tokens_detection: 2048
 detection_concurrency: 32               # concurrent per-frame detection requests
 vlm_temperature_detection: 0.0          # greedy for grounding
