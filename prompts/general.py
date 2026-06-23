@@ -1,4 +1,4 @@
-# ─── Step 1: VLM Scene Segmentation ───
+# ─── Scene Segmentation ───
 
 PROMPT_SEGMENT = """You are given {num_frames} frames (sampled at 1 fps) from a video that is {duration:.1f} seconds long.
 
@@ -32,7 +32,7 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences."""
 
 
-# ─── Step 3: Dense Captioning with Prefix Context ───
+# ─── Dense Captioning with Prefix Context ───
 
 PROMPT_CAPTION = """You are a professional video annotator. Describe this video clip in rich, specific detail.
 
@@ -61,6 +61,35 @@ CONTENT RULES:
 Output ONLY the description text."""
 
 
+PROMPT_CAPTION_SURVEILLANCE = """You are a surveillance footage annotator. Describe this clip from a fixed surveillance camera.
+
+{prefix_context}
+
+You are given {num_frames} frames (1 fps) from a fixed surveillance camera, clip [{start:.1f}s - {end:.1f}s].
+
+CONTEXT:
+- The camera is fixed: no pans, zooms, cuts, or shot changes. The setting does NOT change between clips.
+- Activity is often sparse. Empty stretches with no people or motion are NORMAL — describe them briefly and honestly. Do NOT invent activity to fill space.
+
+Cover these aspects in continuous prose:
+- The setting and environment (location type, lighting, time-of-day cues, indoor/outdoor)
+- Any people, vehicles, or animals visible: appearance, clothing, what they are doing, where they enter/exit the frame
+- Notable static elements that ground the location (signs, doors, parked vehicles, structures)
+
+CRITICAL FORMAT RULES:
+- Write as continuous prose. No section headings. No bullet lists. No markdown.
+- Do NOT start with labels like "Summary:" or "Description:". Begin directly with the content.
+
+CONTENT RULES:
+- Be specific and concrete: "a man in a black jacket pushes a cart from left to right" not "a person moves an object".
+- If previous clips above already described the static setting, do NOT re-describe it. Focus on what is NEW or CHANGED (new people, new movements).
+- If the clip has no visible activity, say so briefly (e.g., "The corridor remains empty. No movement throughout the clip."). Brevity is fine in this case.
+- Describe ONLY what is visible. Do NOT speculate about intent, identity, or off-screen context. Avoid "appears to", "seems to", "might be".
+- DO NOT fabricate. If you cannot see it clearly, do not mention it.
+
+Output ONLY the description text."""
+
+
 PROMPT_CAPTION_RETRY = """Your previous description of this video clip was too short ({word_count} words).
 Here is what you wrote:
 ---
@@ -74,7 +103,7 @@ Please rewrite and EXPAND this description to at least 100 words. Add more visua
 Output ONLY the expanded description text."""
 
 
-# ─── Step 4: Action Annotation ───
+# ─── Action Annotation ───
 
 PROMPT_ACTIONS = """You are given {num_frames} frames (1 fps) from a video clip [{start:.1f}s - {end:.1f}s], which is {duration:.1f} seconds long.
 
@@ -114,7 +143,44 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences."""
 
 
-# ─── Step 5: Per-frame Object Detection (VLM with vision) ───
+PROMPT_ACTIONS_SURVEILLANCE = """You are given {num_frames} frames (1 fps) from a FIXED surveillance camera, clip [{start:.1f}s - {end:.1f}s], duration {duration:.1f}s.
+
+This clip belongs to the following scene:
+"{parent_description}"
+
+YOUR TASK: Annotate visible actions by people, vehicles, or animals in this clip. An action is a coherent motion or state performed by ONE specific visual subject.
+
+CORE RULES:
+- ONE SUBJECT PER ACTION. Two people moving at the same time → two separate actions.
+- Actions CAN overlap in time, and gaps are fine. Not every second needs an action.
+- Subjects often enter and leave the frame mid-clip. Clip the action's start/end to the window when the subject is actually visible.
+- The camera is FIXED. Do NOT annotate camera movement (there is none). Do NOT treat parallax or zoom as actions.
+- If the clip is empty (no people, vehicles, or animals doing anything), output an empty array [].
+- Only annotate VISUALLY SALIENT subjects. Ignore tiny distant figures and irrelevant background activity (e.g., trees moving in wind).
+
+FORBIDDEN — NO SEMANTIC SPECULATION
+- Describe ONLY what is visually observable.
+- Use visual verbs: "walks", "stops", "turns", "enters frame", "exits frame", "pushes cart", "opens door", "sits down".
+- Do NOT use verbs like "explains", "argues", "decides", "intends", "appears to", "seems to".
+- If a person is speaking, say "speaks while gesturing"; do NOT guess what they are saying.
+
+SUBJECT FIELD:
+- Short noun phrase identifying the subject (e.g., "man in dark jacket", "woman pushing stroller", "white sedan", "cyclist in red helmet").
+- Be specific enough to disambiguate from other subjects in the clip.
+
+OUTPUT FORMAT: A JSON array, and nothing else:
+[
+  {{"action_id": 1, "start": ..., "end": ..., "subject": "...", "description": "..."}},
+  ...
+]
+
+RULES:
+- TIMESTAMPS: ABSOLUTE timestamps relative to the original video, one decimal place. Must be within [{start:.1f}, {end:.1f}].
+- DESCRIPTIONS: One sentence, present tense, specific and concrete.
+- Output ONLY the JSON array. No explanation, no markdown fences. If nothing happens, output []."""
+
+
+# ─── Per-frame Object Detection (VLM with vision) ───
 
 PROMPT_DETECT_OBJECTS = """You are given a single frame from a video clip.
 
@@ -134,9 +200,17 @@ EXCLUDE:
 - Decorative or structural surfaces filling the frame, such as tablecloths, walls, floors, ceilings, or sky.
 - Body parts in isolation, text overlays, logos, and watermarks.
 - Objects occupying less than about 5% of the frame area, unless they are the focus of the action.
+- Background clutter and scenery that no one is interacting with: parked vehicles, parked or shared bicycles that nobody is currently riding, stacked goods/cargo, racks of bikes, shelving, foliage. Skip these entirely unless they ARE the action. A person riding or actively pushing a bike IS key; an empty parked bike is NOT.
+
+DO NOT ENUMERATE GROUPS OF SIMILAR ITEMS — THIS IS A HARD RULE.
+- Never output more than TWO boxes that share the same or a near-identical label. The moment a third instance of the same kind of object would appear (a 3rd "bicycle", a 3rd "box", a 3rd "car", a 3rd "water bottle"), STOP listing them one by one.
+- When three or more similar objects are parked, piled, stacked, racked, or clustered together (parked bicycles, water bottles on a truck, boxes, parked cars, a dense crowd), draw ONE single box around the whole group with a count-style label such as "row of parked bicycles" or "stack of water bottles" — OR skip the group entirely if no one is interacting with it (it is just background).
+- Emitting a long series of nearly-identical boxes for the same kind of item is ALWAYS WRONG, even if there are dozens of them in the frame.
 
 ONE OBJECT = ONE BOX = ONE LABEL.
 Do NOT output overlapping boxes for the same physical object under different names. If a milk carton could be called either "milk carton" or "beverage container", pick the more specific one and output it ONCE.
+
+HARD LIMIT: output AT MOST 10 boxes for the whole frame. If there seem to be more than 10 key objects, keep only the 10 most central/important to the action and drop the rest. A correct answer is usually 0–6 boxes.
 
 LABELS:
 - Short noun phrase, 1 to 6 words, concrete (NOT "presentation" or "discussion").
@@ -155,4 +229,6 @@ OUTPUT: a JSON array, nothing else. No markdown fences, no explanation.
 ]
 
 Be selective. If you find yourself listing many objects, you are likely including non-key items. Recheck and keep only what is essential to the action.
-If nothing key is present (transition or blank frame), output []."""
+If nothing key is present (transition or blank frame), output [].
+
+FINAL CHECK before you answer: if your list contains 3+ boxes with the same label (e.g. several "bicycle" or "box"), you are enumerating a group — DELETE them and either output ONE group box or drop them as background. Output at most 10 boxes total."""

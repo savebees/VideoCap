@@ -5,17 +5,22 @@ import os
 import sys
 import time
 from contextlib import contextmanager
-from datetime import datetime, timezone
 
 import jsonschema
 import yaml
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from preprocess.preprocess import run_step0
-from src.scene_segmentation import run_step1, run_step2, run_step3
-from src.actions import run_step4
-from src.object_detection import run_step5
+from preprocess.preprocess import run_preprocess
+from src.scene_segmentation import (
+    run_segmentation,
+    run_fixed_chunk_segmentation,
+    run_boundary_validation,
+    run_captioning,
+)
+from src.actions import run_actions
+from src.object_detection import run_detection
+from prompts import is_surveillance_dataset
 from utils.vllm_client import get_vlm_client
 
 logger = logging.getLogger(__name__)
@@ -52,7 +57,7 @@ def _detect_frame_resolution(config: dict, video_id: str) -> str:
 
 
 def save_annotation(segments: list[dict], objects: list[dict], metadata: dict, config: dict,
-                    step1_raw_count: int, step2_repairs: int,
+                    raw_segments_count: int, boundary_repairs: int,
                     timings: dict) -> tuple[str, str]:
     video_id = metadata["video_id"]
     video_output_dir = os.path.join(config["output_dir"], video_id)
@@ -70,14 +75,13 @@ def save_annotation(segments: list[dict], objects: list[dict], metadata: dict, c
         "file_size_mb": metadata["file_size_mb"],
         "segments": segments,
         "metadata": {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
             "models": {"vlm": config["vlm_model"]},
             "total_segments": n,
             "avg_segment_duration": round(metadata["duration"] / n, 2) if n else 0,
             "total_actions": total_actions,
             "avg_actions_per_segment": round(total_actions / n, 2) if n else 0,
-            "step1_raw_segments": step1_raw_count,
-            "step2_repairs": step2_repairs,
+            "raw_segments_count": raw_segments_count,
+            "boundary_repairs": boundary_repairs,
             "timings_sec": timings,
         },
     }
@@ -88,7 +92,6 @@ def save_annotation(segments: list[dict], objects: list[dict], metadata: dict, c
         "frame_resolution": _detect_frame_resolution(config, video_id),
         "objects": objects,
         "metadata": {
-            "generated_at": datetime.now(timezone.utc).isoformat(),
             "models": {"vlm": config["vlm_model"]},
             "total_objects": total_objects,
             "detection_nms_threshold": config.get("detection_nms_threshold", 0.5),
@@ -133,26 +136,48 @@ def process_video(video_path: str, config: dict) -> tuple[str, str]:
     timings: dict = {}
     video_t0 = time.perf_counter()
 
-    with _timer(timings, "step0"):
-        metadata, frame_dir = run_step0(video_path, config)
+    with _timer(timings, "preprocess"):
+        metadata, frame_dir = run_preprocess(video_path, config)
     client = get_vlm_client(config)
 
+    long_threshold = config.get("long_video_threshold_sec", 120)
+    dataset_type = config.get("dataset_type")
+    force_surveillance = is_surveillance_dataset(dataset_type)
+    is_long = metadata["duration"] > long_threshold or force_surveillance
+    if is_long:
+        reason = (
+            f"dataset_type '{dataset_type}' is fixed-camera surveillance"
+            if force_surveillance
+            else f"duration {metadata['duration']:.1f}s > {long_threshold}s"
+        )
+        logger.info(
+            f"[Pipeline] {video_id}: {reason} — "
+            f"surveillance mode (fixed chunks + surveillance prompts)"
+        )
+
     # scene segmentation + description
-    with _timer(timings, "step1"):
-        segments = run_step1(client, frame_dir, metadata, config)
-    step1_raw_count = len(segments)
-    with _timer(timings, "step2"):
-        segments, step2_repairs = run_step2(segments, metadata["duration"], config, video_id)
-    with _timer(timings, "step3"):
-        segments = run_step3(client, frame_dir, segments, metadata, config)
+    with _timer(timings, "segmentation"):
+        if is_long:
+            segments = run_fixed_chunk_segmentation(metadata, config)
+        else:
+            segments = run_segmentation(client, frame_dir, metadata, config)
+    raw_segments_count = len(segments)
+    with _timer(timings, "validation"):
+        # Always validate: fixed chunks are contiguous, but the last chunk's end
+        # is round(duration, 1), which can drift from the true duration — boundary
+        # validation snaps it back to the exact duration.
+        segments, boundary_repairs = run_boundary_validation(
+            segments, metadata["duration"], config, video_id)
+    with _timer(timings, "captioning"):
+        segments = run_captioning(client, frame_dir, segments, metadata, config, surveillance=is_long)
 
     # actions
-    with _timer(timings, "step4"):
-        segments = run_step4(client, frame_dir, segments, metadata, config)
+    with _timer(timings, "actions"):
+        segments = run_actions(client, frame_dir, segments, metadata, config, surveillance=is_long)
 
     # object detection (per-frame, output saved to a separate file)
-    with _timer(timings, "step5"):
-        objects = run_step5(client, frame_dir, segments, metadata, config)
+    with _timer(timings, "detection"):
+        objects = run_detection(client, frame_dir, segments, metadata, config)
 
     timings["total"] = round(time.perf_counter() - video_t0, 2)
     logger.info(
@@ -161,14 +186,14 @@ def process_video(video_path: str, config: dict) -> tuple[str, str]:
     )
 
     return save_annotation(segments, objects, metadata, config,
-                           step1_raw_count, step2_repairs, timings)
+                           raw_segments_count, boundary_repairs, timings)
 
 
 def clear_cache(video_path: str, config: dict):
     video_id = os.path.splitext(os.path.basename(video_path))[0]
     output_dir = os.path.join(config["output_dir"], video_id)
-    for fname in ("step1_segments.json", "step2_validated.json", "step3_captioned.json",
-                  "step4_actions.json", "step5_objects.json",
+    for fname in ("segments.json", "segments_validated.json", "segments_captioned.json",
+                  "segments_with_actions.json", "detections.json",
                   "annotation.json", "objects.json"):
         fpath = os.path.join(output_dir, fname)
         if os.path.exists(fpath):
@@ -181,6 +206,8 @@ def main():
     parser.add_argument("--video", type=str, help="Path to a single video file")
     parser.add_argument("--video_dir", type=str, help="Directory containing video files")
     parser.add_argument("--config", type=str, help="Path to config YAML")
+    parser.add_argument("--dataset_type", type=str,
+                        help="Prompt set to use (e.g. 'nwpu_campus'); overrides config")
     parser.add_argument("--force", action="store_true", help="Clear cache and re-run")
     args = parser.parse_args()
 
@@ -191,6 +218,8 @@ def main():
     )
 
     config = load_config(args.config)
+    if args.dataset_type:
+        config["dataset_type"] = args.dataset_type
 
     if args.video:
         video_paths = [args.video]

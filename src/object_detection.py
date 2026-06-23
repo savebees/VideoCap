@@ -1,15 +1,16 @@
-"""Step 5: Per-frame object detection via Qwen3.6-VL native grounding."""
+"""Per-frame object detection via Qwen3.6-VL native grounding."""
 
 import base64
 import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 
 from openai import OpenAI
 from PIL import Image
 
-from prompts import PROMPT_DETECT_OBJECTS
+from prompts import get_prompts
 from utils.video import parse_json_array
 from utils.vllm_client import get_extra_body
 
@@ -30,42 +31,6 @@ def _iou(box_a: list, box_b: list) -> float:
     area_b = (box_b[2] - box_b[0]) * (box_b[3] - box_b[1])
     union = area_a + area_b - inter
     return inter / union if union > 0 else 0
-
-
-def _cross_frame_nms(detections: list[dict], iou_threshold: float) -> list[dict]:
-    """Cluster detections across frames by spatial overlap, ignoring labels.
-
-    Two detections with IoU above the threshold are treated as the same physical
-    object regardless of their label strings. Within each cluster, keep the
-    detection with the highest confidence (its label becomes the cluster label).
-
-    This handles cross-frame label drift where the same object receives slightly
-    different names on different frames (e.g., "badge-making press" vs
-    "badge making press", or "black expandable security gate" vs
-    "expandable security gate").
-    """
-    if not detections:
-        return []
-
-    # Sort by confidence descending so the highest-confidence detection in each
-    # cluster is always the seed (and therefore the kept one).
-    sorted_dets = sorted(detections, key=lambda d: d["confidence"], reverse=True)
-    suppressed = [False] * len(sorted_dets)
-    kept = []
-
-    for i in range(len(sorted_dets)):
-        if suppressed[i]:
-            continue
-        kept.append(sorted_dets[i])
-        for j in range(i + 1, len(sorted_dets)):
-            if suppressed[j]:
-                continue
-            if _iou(sorted_dets[i]["bbox"], sorted_dets[j]["bbox"]) > iou_threshold:
-                suppressed[j] = True
-
-    # Stable output ordering: by frame_index, then by confidence descending.
-    kept.sort(key=lambda d: (d["frame_index"], -d["confidence"]))
-    return [{**det, "object_id": idx} for idx, det in enumerate(kept, start=1)]
 
 
 def _intra_frame_nms(detections: list[dict], iou_threshold: float) -> list[dict]:
@@ -135,7 +100,8 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
     frame_w, frame_h = img.size
 
     subjects_hint = _build_subjects_hint(scene.get("actions", []))
-    prompt = PROMPT_DETECT_OBJECTS.format(
+    prompts = get_prompts(config.get("dataset_type"))
+    prompt = prompts.PROMPT_DETECT_OBJECTS.format(
         parent_description=scene["description"],
         subjects_hint=subjects_hint,
     )
@@ -150,10 +116,10 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
                 {"type": "image_url", "image_url": {"url": image_url}},
                 {"type": "text", "text": prompt},
             ]}],
-            temperature=config.get("vlm_temperature", 0.7),
+            temperature=config.get("vlm_temperature_detection", 0.0),
             top_p=config.get("vlm_top_p", 0.8),
-            presence_penalty=config.get("vlm_presence_penalty", 0.0),
-            max_tokens=config.get("vlm_max_tokens_step5", 2048),
+            presence_penalty=config.get("vlm_presence_penalty_detection", 0.0),
+            max_tokens=config.get("vlm_max_tokens_detection", 2048),
             extra_body=get_extra_body(config),
         )
         raw = _strip_thinking(response.choices[0].message.content or "")
@@ -161,7 +127,11 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
             items = parse_json_array(raw)
             results = []
             for item in items:
-                if not all(k in item for k in ("label", "bbox_2d", "confidence")):
+                # Qwen3-VL native grounding reliably emits label + bbox_2d, but is
+                # inconsistent about confidence (often omitted entirely). Requiring
+                # it would silently drop every box in such frames. Treat confidence
+                # as optional and default to 1.0 — the model chose to emit the box.
+                if "label" not in item or "bbox_2d" not in item:
                     continue
                 bb = item["bbox_2d"]
                 if len(bb) != 4:
@@ -179,80 +149,84 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
                 results.append({
                     "label": str(item["label"]).strip(),
                     "bbox": [x1, y1, x2, y2],
-                    "confidence": round(float(item["confidence"]), 4),
+                    "confidence": round(float(item.get("confidence", 1.0)), 4),
                 })
             deduped = _intra_frame_nms(results, nms_threshold)
             if len(deduped) < len(results):
                 logger.info(
-                    f"[Step 5] {os.path.basename(frame_path)}: "
+                    f"[Detection] {os.path.basename(frame_path)}: "
                     f"intra-frame NMS dropped {len(results) - len(deduped)} duplicate(s)"
                 )
             return deduped
         except (json.JSONDecodeError, AssertionError, ValueError, TypeError) as e:
-            logger.warning(f"[Step 5] {os.path.basename(frame_path)} parse failed (attempt {attempt}): {e}")
+            logger.warning(f"[Detection] {os.path.basename(frame_path)} parse failed (attempt {attempt}): {e}")
             if attempt == max_retries:
-                logger.error(f"[Step 5] {os.path.basename(frame_path)}: giving up after {max_retries} retries")
+                logger.error(f"[Detection] {os.path.basename(frame_path)}: giving up after {max_retries} retries")
                 return []
     return []
 
 
-def run_step5(client: OpenAI, frame_dir: str, segments: list[dict],
-              metadata: dict, config: dict) -> list[dict]:
+def run_detection(client: OpenAI, frame_dir: str, segments: list[dict],
+                  metadata: dict, config: dict) -> list[dict]:
     """Per-frame Qwen3.6 object detection. Returns flat list of detections."""
     video_id = metadata["video_id"]
-    cache_path = os.path.join(config["output_dir"], video_id, "step5_objects.json")
+    cache_path = os.path.join(config["output_dir"], video_id, "detections.json")
     if os.path.exists(cache_path):
-        logger.info(f"[Step 5] {video_id}: cached")
+        logger.info(f"[Detection] {video_id}: cached")
         with open(cache_path) as f:
             return json.load(f)
 
     fps = config.get("video_fps", 1.0)
-    cross_frame_iou = config.get("detection_cross_frame_iou", 0.85)
     confidence_floor = config.get("detection_confidence_floor", 0.3)
+    concurrency = max(1, int(config.get("detection_concurrency", 8)))
     # detection_nms_threshold is read directly inside _detect_one_frame for intra-frame NMS.
 
     frame_files = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
     if not frame_files:
         raise RuntimeError(f"No frames in {frame_dir}")
 
-    raw_detections: list[dict] = []
-    for fname in frame_files:
+    def _process_frame(fname: str) -> list[dict]:
+        """Detect one frame. Returns confidence-filtered detections with frame metadata."""
         frame_index = int(os.path.splitext(fname)[0])
         frame_timestamp = round(frame_index / fps, 2)
         scene = _scene_for_frame(frame_timestamp, segments)
         if scene is None:
-            logger.warning(f"[Step 5] frame {frame_index} (t={frame_timestamp}s) outside all segments; skipping")
-            continue
+            logger.warning(f"[Detection] frame {frame_index} (t={frame_timestamp}s) outside all segments; skipping")
+            return []
 
         frame_path = os.path.join(frame_dir, fname)
         detections = _detect_one_frame(client, frame_path, scene, config)
-        for d in detections:
-            if d["confidence"] < confidence_floor:
-                continue
-            raw_detections.append({
+        out = [
+            {
                 "frame_index": frame_index,
                 "frame_timestamp": frame_timestamp,
                 "scene_id": scene["scene_id"],
                 **d,
-            })
-        logger.info(f"[Step 5] {video_id}: frame {frame_index} -> {len(detections)} dets")
+            }
+            for d in detections
+            if d["confidence"] >= confidence_floor
+        ]
+        logger.info(f"[Detection] {video_id}: frame {frame_index} -> {len(detections)} dets")
+        return out
 
-    final = _cross_frame_nms(raw_detections, cross_frame_iou)
-    # Reorder fields for stable output: object_id, frame_index, frame_timestamp, scene_id, label, bbox, confidence
+    raw_detections: list[dict] = []
+    logger.info(f"[Detection] {video_id}: {len(frame_files)} frames, concurrency={concurrency}")
+    with ThreadPoolExecutor(max_workers=concurrency) as pool:
+        for dets in pool.map(_process_frame, frame_files):
+            raw_detections.extend(dets)
+
+    raw_detections.sort(key=lambda d: (d["frame_index"], -d["confidence"]))
     final = [{
-        "object_id": d["object_id"],
+        "object_id": idx,
         "frame_index": d["frame_index"],
         "frame_timestamp": d["frame_timestamp"],
         "scene_id": d["scene_id"],
         "label": d["label"],
         "bbox": d["bbox"],
         "confidence": d["confidence"],
-    } for d in final]
+    } for idx, d in enumerate(raw_detections, start=1)]
 
     with open(cache_path, "w") as f:
         json.dump(final, f, indent=2, ensure_ascii=False)
-    logger.info(
-        f"[Step 5] {video_id}: {len(raw_detections)} raw (post intra-frame NMS) "
-        f"-> {len(final)} after cross-frame clustering, saved"
-    )
+    logger.info(f"[Detection] {video_id}: {len(final)} detections (post intra-frame NMS), saved")
     return final

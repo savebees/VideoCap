@@ -2,35 +2,54 @@
 vlm_model: "Qwen3.6-35B-A3B"
 vllm_base_url: "http://localhost:8000/v1"
 
-# ── Preprocessing (Step 0) ──
+# ── Dataset ──
+# Selects the prompt set from the prompts/ package. "default" = generic prompts.
+# "nwpu_campus" = fixed-camera campus surveillance (forces surveillance mode for
+# all clips regardless of duration). Override per-run with --dataset_type.
+dataset_type: "default"
+
+# ── Preprocessing ──
 video_fps: 1.0
 frame_quality: 95
 frame_max_long_side: 672
 
-# ── Dense Captioning (Step 3) ──
+# ── Long-video Mode ──
+long_video_threshold_sec: 120           
+long_video_chunk_sec: 120              
+
+# ── Scene Segmentation ──
+vlm_max_tokens_segmentation: 8192
+vlm_temperature_segmentation: 0.2       # structured JSON: low temp for stable boundaries/timestamps
+vlm_presence_penalty_segmentation: 0.5
+
+# ── Dense Captioning ──
 prefix_context_num: 3
 min_description_words: 100
-vlm_max_tokens_step3: 2048
+min_description_words_surveillance: 30   # lower bar: empty surveillance clips don't need 100 words
+vlm_max_tokens_captioning: 2048
 max_retries_short_desc: 2
+vlm_temperature_captioning: 0.7         # prose: keep diversity for rich descriptions
+vlm_presence_penalty_captioning: 1.0
 
-# ── Actions (Step 4) ──
+# ── Actions ──
 min_action_duration: 0.5
-vlm_max_tokens_step4: 4096
+vlm_max_tokens_actions: 4096
+vlm_temperature_actions: 0.2            # structured JSON: low temp, no presence penalty
+vlm_presence_penalty_actions: 0.0
 
-# ── Object Detection (Step 5) ──
+# ── Object Detection ──
 detection_nms_threshold: 0.5            # intra-frame NMS: same label + IoU > this → drop duplicate
-detection_cross_frame_iou: 0.85         # cross-frame clustering: any labels + IoU > this → same physical object
-detection_confidence_floor: 0.3
-vlm_max_tokens_step5: 4096
+detection_confidence_floor: 0.7
+vlm_max_tokens_detection: 2048
+detection_concurrency: 32               # concurrent per-frame detection requests
+vlm_temperature_detection: 0.0          # greedy for grounding
+vlm_presence_penalty_detection: 0.0
 
 # ── VLM General ──
-vlm_temperature: 0.7
-vlm_max_tokens_step1: 8192
 max_retries: 3
 enable_thinking: false
 vlm_top_p: 0.8
 vlm_top_k: 20
-vlm_presence_penalty: 1.5
 
 # ── Paths ──
 video_dir: "data/videos"

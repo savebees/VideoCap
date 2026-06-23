@@ -33,9 +33,8 @@
     },
     "metadata": {
       "type": "object",
-      "required": ["generated_at", "models", "total_objects"],
+      "required": ["models", "total_objects"],
       "properties": {
-        "generated_at": {"type": "string"},
         "models": {
           "type": "object",
           "properties": {

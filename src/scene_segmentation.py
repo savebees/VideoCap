@@ -1,4 +1,4 @@
-"""Steps 1-3: VLM scene segmentation, boundary validation, dense captioning."""
+"""VLM scene segmentation, boundary validation, and dense captioning."""
 
 import copy
 import json
@@ -8,11 +8,7 @@ import re
 
 from openai import OpenAI
 
-from prompts import (
-    PROMPT_SEGMENT,
-    PROMPT_CAPTION,
-    PROMPT_CAPTION_RETRY,
-)
+from prompts import get_prompts
 from utils.frames import build_video_content
 from utils.video import parse_json_array
 from utils.vllm_client import get_extra_body
@@ -24,7 +20,7 @@ def _strip_thinking(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-# ─── Step 1 ───
+# ─── Scene segmentation ───
 
 def _parse_segments(raw_text: str) -> list[dict]:
     segments = parse_json_array(raw_text)
@@ -46,10 +42,10 @@ def _vlm_segment_call(client: OpenAI, video_content: dict, prompt: str,
             messages=[{"role": "user", "content": [
                 video_content, {"type": "text", "text": prompt},
             ]}],
-            temperature=config.get("vlm_temperature", 0.0),
+            temperature=config.get("vlm_temperature_segmentation", 0.2),
             top_p=config.get("vlm_top_p", 0.8),
-            presence_penalty=config.get("vlm_presence_penalty", 0.0),
-            max_tokens=config.get("vlm_max_tokens_step1", 4096),
+            presence_penalty=config.get("vlm_presence_penalty_segmentation", 0.5),
+            max_tokens=config.get("vlm_max_tokens_segmentation", 4096),
             extra_body=get_extra_body(config),
         )
         raw_text = _strip_thinking(response.choices[0].message.content or "")
@@ -61,40 +57,78 @@ def _vlm_segment_call(client: OpenAI, video_content: dict, prompt: str,
     raise RuntimeError(f"{tag} failed after {max_retries} retries") from last_exc
 
 
-def run_step1(client: OpenAI, frame_dir: str, metadata: dict, config: dict) -> list[dict]:
+def run_segmentation(client: OpenAI, frame_dir: str, metadata: dict, config: dict) -> list[dict]:
     """Single-pass scene segmentation."""
     video_id = metadata["video_id"]
-    cache_path = os.path.join(config["output_dir"], video_id, "step1_segments.json")
+    cache_path = os.path.join(config["output_dir"], video_id, "segments.json")
 
     if os.path.exists(cache_path):
-        logger.info(f"[Step 1] {video_id}: cached")
+        logger.info(f"[Segmentation] {video_id}: cached")
         with open(cache_path) as f:
             return json.load(f)
 
     fps = config.get("video_fps", 1.0)
+    prompts = get_prompts(config.get("dataset_type"))
     video_content, num_frames = build_video_content(frame_dir, fps)
-    prompt = PROMPT_SEGMENT.format(
+    prompt = prompts.PROMPT_SEGMENT.format(
         num_frames=num_frames,
         duration=metadata["duration"],
     )
     segments = _vlm_segment_call(
         client, video_content, prompt, config,
-        tag=f"[Step 1] {video_id}: segmentation",
+        tag=f"[Segmentation] {video_id}",
     )
 
     with open(cache_path, "w") as f:
         json.dump(segments, f, indent=2)
-    logger.info(f"[Step 1] {video_id}: {len(segments)} segments")
+    logger.info(f"[Segmentation] {video_id}: {len(segments)} segments")
     return segments
 
 
-# ─── Step 2 ───
+def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
+    """Long-video path: fixed-time scene chunks, no VLM call.
 
-def run_step2(segments: list[dict], duration: float, config: dict, video_id: str) -> tuple[list[dict], int]:
-    """Programmatic boundary repair."""
-    cache_path = os.path.join(config["output_dir"], video_id, "step2_validated.json")
+    Surveillance footage is single-camera with a stable setting, so VLM-based
+    segmentation is wasteful and unreliable across 10+ minute clips. We slice
+    deterministically into chunk_sec windows; description is filled by captioning.
+    """
+    video_id = metadata["video_id"]
+    cache_path = os.path.join(config["output_dir"], video_id, "segments.json")
     if os.path.exists(cache_path):
-        logger.info(f"[Step 2] {video_id}: cached")
+        logger.info(f"[Segmentation] {video_id}: cached")
+        with open(cache_path) as f:
+            return json.load(f)
+
+    duration = metadata["duration"]
+    chunk_sec = float(config.get("long_video_chunk_sec", 120))
+    segments: list[dict] = []
+    start = 0.0
+    scene_id = 1
+    while start < duration - 1e-6:
+        end = min(start + chunk_sec, duration)
+        segments.append({
+            "scene_id": scene_id,
+            "start": round(start, 1),
+            "end": round(end, 1),
+            "brief": "",
+        })
+        start = end
+        scene_id += 1
+
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    with open(cache_path, "w") as f:
+        json.dump(segments, f, indent=2)
+    logger.info(f"[Segmentation] {video_id}: {len(segments)} fixed {chunk_sec:.0f}s chunks (long-video mode)")
+    return segments
+
+
+# ─── Boundary validation ───
+
+def run_boundary_validation(segments: list[dict], duration: float, config: dict, video_id: str) -> tuple[list[dict], int]:
+    """Programmatic boundary repair."""
+    cache_path = os.path.join(config["output_dir"], video_id, "segments_validated.json")
+    if os.path.exists(cache_path):
+        logger.info(f"[Validation] {video_id}: cached")
         with open(cache_path) as f:
             data = json.load(f)
         return data["segments"], data["repairs"]
@@ -138,11 +172,11 @@ def run_step2(segments: list[dict], duration: float, config: dict, video_id: str
 
     with open(cache_path, "w") as f:
         json.dump({"segments": segments, "repairs": repairs}, f, indent=2)
-    logger.info(f"[Step 2] {video_id}: {len(segments)} segments, {repairs} repairs")
+    logger.info(f"[Validation] {video_id}: {len(segments)} segments, {repairs} repairs")
     return segments, repairs
 
 
-# ─── Step 3 ───
+# ─── Dense captioning ───
 
 def _build_prefix(descriptions: list[dict], max_prev: int = 3) -> str:
     if not descriptions:
@@ -161,59 +195,65 @@ def _vlm_call(client: OpenAI, video_content: dict, prompt_text: str, config: dic
         messages=[{"role": "user", "content": [
             video_content, {"type": "text", "text": prompt_text},
         ]}],
-        temperature=config.get("vlm_temperature", 0.0),
+        temperature=config.get("vlm_temperature_captioning", 0.7),
         top_p=config.get("vlm_top_p", 0.8),
-        presence_penalty=config.get("vlm_presence_penalty", 0.0),
-        max_tokens=config.get("vlm_max_tokens_step3", 2048),
+        presence_penalty=config.get("vlm_presence_penalty_captioning", 1.0),
+        max_tokens=config.get("vlm_max_tokens_captioning", 2048),
         extra_body=get_extra_body(config),
     )
     return _strip_thinking(response.choices[0].message.content or "")
 
 
-def run_step3(client: OpenAI, frame_dir: str, segments: list[dict],
-              metadata: dict, config: dict) -> list[dict]:
+def run_captioning(client: OpenAI, frame_dir: str, segments: list[dict],
+                   metadata: dict, config: dict, surveillance: bool = False) -> list[dict]:
     """Dense captioning with prefix context."""
     video_id = metadata["video_id"]
-    cache_path = os.path.join(config["output_dir"], video_id, "step3_captioned.json")
+    cache_path = os.path.join(config["output_dir"], video_id, "segments_captioned.json")
     if os.path.exists(cache_path):
-        logger.info(f"[Step 3] {video_id}: cached")
+        logger.info(f"[Captioning] {video_id}: cached")
         with open(cache_path) as f:
             return json.load(f)
 
     segments = copy.deepcopy(segments)
     fps = config.get("video_fps", 1.0)
     max_prev = config.get("prefix_context_num", 3)
-    min_words = config.get("min_description_words", 100)
+    prompts = get_prompts(config.get("dataset_type"))
+    if surveillance:
+        min_words = config.get("min_description_words_surveillance", 30)
+        caption_template = prompts.PROMPT_CAPTION_SURVEILLANCE
+    else:
+        min_words = config.get("min_description_words", 100)
+        caption_template = prompts.PROMPT_CAPTION
     max_retries = config.get("max_retries_short_desc", 2)
 
     completed = [{"scene_id": s["scene_id"], "start": s["start"],
                    "end": s["end"], "description": s.get("brief", "")} for s in segments]
 
     for i, seg in enumerate(segments):
-        logger.info(f"[Step 3] {video_id}: scene {seg['scene_id']}/{len(segments)} "
+        logger.info(f"[Captioning] {video_id}: scene {seg['scene_id']}/{len(segments)} "
                      f"[{seg['start']:.1f}s - {seg['end']:.1f}s]")
 
         prefix = _build_prefix(completed[:i], max_prev)
         video_content, num_frames = build_video_content(
             frame_dir, fps, start_time=seg["start"], end_time=seg["end"])
 
-        prompt = PROMPT_CAPTION.format(prefix_context=prefix, num_frames=num_frames,
-                                        start=seg["start"], end=seg["end"])
+        prompt = caption_template.format(prefix_context=prefix, num_frames=num_frames,
+                                          start=seg["start"], end=seg["end"])
         description = _vlm_call(client, video_content, prompt, config)
 
         word_count = len(description.split())
         for retry in range(max_retries):
             if word_count >= min_words:
                 break
-            logger.warning(f"[Step 3] Scene {seg['scene_id']}: {word_count} words, retry {retry + 1}")
-            retry_prompt = PROMPT_CAPTION_RETRY.format(
+            logger.warning(f"[Captioning] Scene {seg['scene_id']}: {word_count} words, retry {retry + 1}")
+            retry_prompt = prompts.PROMPT_CAPTION_RETRY.format(
                 word_count=word_count, previous_attempt=description, prefix_context=prefix)
             description = _vlm_call(client, video_content, retry_prompt, config)
             word_count = len(description.split())
 
         if word_count < min_words:
             logger.warning(
-                f"[Step 3] Scene {seg['scene_id']}: {word_count} words after {max_retries} retries "
+                f"[Captioning] Scene {seg['scene_id']}: {word_count} words after {max_retries} retries "
                 f"(min={min_words}); keeping best result and continuing")
 
         segments[i]["description"] = description
@@ -222,5 +262,5 @@ def run_step3(client: OpenAI, frame_dir: str, segments: list[dict],
 
     with open(cache_path, "w") as f:
         json.dump(segments, f, indent=2)
-    logger.info(f"[Step 3] {video_id}: {len(segments)} scenes captioned")
+    logger.info(f"[Captioning] {video_id}: {len(segments)} scenes captioned")
     return segments

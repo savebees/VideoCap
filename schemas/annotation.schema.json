@@ -45,9 +45,8 @@
     },
     "metadata": {
       "type": "object",
-      "required": ["generated_at", "models", "total_segments", "avg_segment_duration", "total_actions", "avg_actions_per_segment"],
+      "required": ["models", "total_segments", "avg_segment_duration", "total_actions", "avg_actions_per_segment"],
       "properties": {
-        "generated_at": {"type": "string"},
         "models": {
           "type": "object",
           "properties": {
@@ -58,8 +57,8 @@
         "avg_segment_duration": {"type": "number"},
         "total_actions": {"type": "integer"},
         "avg_actions_per_segment": {"type": "number"},
-        "step1_raw_segments": {"type": "integer"},
-        "step2_repairs": {"type": "integer"}
+        "raw_segments_count": {"type": "integer"},
+        "boundary_repairs": {"type": "integer"}
       }
     }
   },

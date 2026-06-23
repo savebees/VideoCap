@@ -16,7 +16,7 @@ from collections import defaultdict
 from PIL import Image, ImageDraw, ImageFont
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-OUTPUT_DIR = os.path.join(REPO_ROOT, "data", "output")
+DEFAULT_OUTPUT_DIR = os.path.join(REPO_ROOT, "data", "output")
 
 
 def color_for_label(label: str) -> tuple[int, int, int]:
@@ -53,8 +53,8 @@ def draw_frame(img: Image.Image, dets: list[dict], font: ImageFont.ImageFont) ->
     return canvas
 
 
-def visualize_video(video_id: str) -> None:
-    video_dir = os.path.join(OUTPUT_DIR, video_id)
+def visualize_video(video_id: str, output_dir: str) -> None:
+    video_dir = os.path.join(output_dir, video_id)
     objects_path = os.path.join(video_dir, "objects.json")
     frames_dir = os.path.join(video_dir, "frames")
     viz_dir = os.path.join(video_dir, "viz")
@@ -92,20 +92,24 @@ def visualize_video(video_id: str) -> None:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--video_id", help="Single video id under data/output/")
-    parser.add_argument("--all", action="store_true", help="Process every video in data/output/")
+    parser.add_argument("--video_id", help="Single video id under the output dir")
+    parser.add_argument("--all", action="store_true", help="Process every video in the output dir")
+    parser.add_argument("--output_dir", default=DEFAULT_OUTPUT_DIR,
+                        help="Dir containing <video_id>/ folders (default: data/output)")
     args = parser.parse_args()
 
+    output_dir = args.output_dir
+
     if args.all:
-        ids = sorted(d for d in os.listdir(OUTPUT_DIR)
-                     if os.path.isdir(os.path.join(OUTPUT_DIR, d)))
+        ids = sorted(d for d in os.listdir(output_dir)
+                     if os.path.isdir(os.path.join(output_dir, d)))
     elif args.video_id:
         ids = [args.video_id]
     else:
         parser.error("Provide --video_id or --all")
 
     for vid in ids:
-        visualize_video(vid)
+        visualize_video(vid, output_dir)
 
 
 if __name__ == "__main__":

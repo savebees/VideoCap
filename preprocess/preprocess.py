@@ -1,4 +1,4 @@
-"""Step 0: Preprocessing — metadata extraction + frame extraction."""
+"""Preprocessing: metadata extraction + frame extraction."""
 
 import json
 import logging
@@ -10,7 +10,7 @@ from utils.frames import extract_frames
 logger = logging.getLogger(__name__)
 
 
-def run_step0(video_path: str, config: dict) -> tuple[dict, str]:
+def run_preprocess(video_path: str, config: dict) -> tuple[dict, str]:
     """Extract video metadata and frames. Cached if outputs exist."""
     video_id = os.path.splitext(os.path.basename(video_path))[0]
     video_output_dir = os.path.join(config["output_dir"], video_id)
@@ -20,11 +20,11 @@ def run_step0(video_path: str, config: dict) -> tuple[dict, str]:
     frame_dir = os.path.join(video_output_dir, "frames")
 
     if os.path.exists(metadata_path) and os.path.exists(frame_dir):
-        logger.info(f"[Step 0] {video_id}: cached")
+        logger.info(f"[Preprocess] {video_id}: cached")
         with open(metadata_path) as f:
             return json.load(f), frame_dir
 
-    logger.info(f"[Step 0] {video_id}: extracting metadata + frames")
+    logger.info(f"[Preprocess] {video_id}: extracting metadata + frames")
     meta = extract_metadata(video_path)
     assert meta["duration"] > 0, f"Invalid duration: {meta['duration']}"
 
