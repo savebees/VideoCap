@@ -96,7 +96,7 @@ Here is what you wrote:
 {previous_attempt}
 ---
 
-Please rewrite and EXPAND this description to at least 100 words. Add more visual details about the environment, character actions, object appearances, and camera work.
+Please rewrite and EXPAND this description to at least {min_words} words. Add more visual details about the environment, character actions, object appearances, and camera work.
 
 {prefix_context}
 

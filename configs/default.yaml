@@ -38,7 +38,9 @@ vlm_temperature_actions: 0.2            # structured JSON: low temp, no presence
 vlm_presence_penalty_actions: 0.0
 
 # ── Object Detection ──
-detection_nms_threshold: 0.5            # intra-frame NMS: same label + IoU > this → drop duplicate (keep larger box)
+# Dedup is intra-frame only (two-pass NMS, keep larger box); there is no cross-frame dedup.
+detection_nms_threshold: 0.5            # pass 1 — same label + IoU > this → drop duplicate
+detection_cross_label_iou_threshold: 0.9  # pass 2 — near-identical boxes (different labels) IoU > this → same object, drop. High bar spares distinct overlaps (person vs the bag they hold)
 vlm_max_tokens_detection: 2048
 detection_concurrency: 32               # concurrent per-frame detection requests
 vlm_temperature_detection: 0.0          # greedy for grounding

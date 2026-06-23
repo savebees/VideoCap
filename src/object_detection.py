@@ -37,12 +37,6 @@ def _box_area(box: list) -> float:
     return max(0, box[2] - box[0]) * max(0, box[3] - box[1])
 
 
-# Boxes this similar are the same physical object even when the model labelled
-# them differently ("man in black jacket" vs "person in dark jacket"). The high
-# bar spares genuinely distinct overlaps, e.g. a person and the bag they hold.
-_CROSS_LABEL_IOU_THRESHOLD = 0.9
-
-
 def _greedy_suppress(dets: list[dict], iou_threshold: float) -> list[dict]:
     """Greedy NMS over boxes pre-sorted by descending area: keep each surviving
     box and suppress later boxes overlapping it beyond iou_threshold (so the
@@ -59,14 +53,17 @@ def _greedy_suppress(dets: list[dict], iou_threshold: float) -> list[dict]:
     return kept
 
 
-def _intra_frame_nms(detections: list[dict], iou_threshold: float) -> list[dict]:
+def _intra_frame_nms(detections: list[dict], iou_threshold: float,
+                     cross_label_threshold: float) -> list[dict]:
     """Within a single frame, drop duplicate boxes for the same physical object.
 
-    Two passes, both keeping the larger (more complete) box:
+    There is NO cross-frame dedup; each frame is deduplicated independently in
+    two passes, both keeping the larger (more complete) box:
       1. Same-label: same label + IoU > iou_threshold is a duplicate.
-      2. Cross-label: near-identical boxes (IoU > _CROSS_LABEL_IOU_THRESHOLD)
-         are the same object even when their labels drifted. The high threshold
-         preserves distinct overlapping objects (a person and the bag they hold).
+      2. Cross-label: near-identical boxes (IoU > cross_label_threshold) are the
+         same object even when their labels drifted ("man in black jacket" vs
+         "person in dark jacket"). The high threshold preserves genuinely
+         distinct overlapping objects (a person and the bag they hold).
     """
     if not detections:
         return []
@@ -82,7 +79,7 @@ def _intra_frame_nms(detections: list[dict], iou_threshold: float) -> list[dict]
 
     # Pass 2 — cross-label dedup of near-identical boxes.
     kept.sort(key=lambda d: _box_area(d["bbox"]), reverse=True)
-    return _greedy_suppress(kept, max(iou_threshold, _CROSS_LABEL_IOU_THRESHOLD))
+    return _greedy_suppress(kept, max(iou_threshold, cross_label_threshold))
 
 
 def _frame_to_data_url(frame_path: str) -> str:
@@ -134,6 +131,7 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
 
     max_retries = config.get("max_retries", 3)
     nms_threshold = config.get("detection_nms_threshold", 0.5)
+    cross_label_threshold = config.get("detection_cross_label_iou_threshold", 0.9)
     for attempt in range(1, max_retries + 1):
         response = client.chat.completions.create(
             model=config["vlm_model"],
@@ -173,7 +171,7 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
                     "label": str(item["label"]).strip(),
                     "bbox": [x1, y1, x2, y2],
                 })
-            deduped = _intra_frame_nms(results, nms_threshold)
+            deduped = _intra_frame_nms(results, nms_threshold, cross_label_threshold)
             if len(deduped) < len(results):
                 logger.info(
                     f"[Detection] {os.path.basename(frame_path)}: "

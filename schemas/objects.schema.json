@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft-07/schema#",
   "title": "Per-frame Object Detections",
-  "description": "Per-frame object detections deduplicated across frames. Bounding boxes are in pixel coordinates of the extracted frame jpg (after ffmpeg resize to frame_max_long_side).",
+  "description": "Per-frame object detections, deduplicated within each frame by two-pass NMS. Bounding boxes are in pixel coordinates of the extracted frame jpg (after ffmpeg resize to frame_max_long_side).",
   "type": "object",
   "required": ["video_id", "frame_extraction_fps", "frame_resolution", "objects", "metadata"],
   "properties": {
@@ -41,7 +41,8 @@
           }
         },
         "total_objects": {"type": "integer", "minimum": 0},
-        "detection_nms_threshold": {"type": "number"}
+        "detection_nms_threshold": {"type": "number"},
+        "detection_cross_label_iou_threshold": {"type": "number"}
       }
     }
   },

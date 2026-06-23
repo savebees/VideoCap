@@ -221,9 +221,16 @@ def run_captioning(client: OpenAI, frame_dir: str, segments: list[dict],
     if surveillance:
         min_words = config.get("min_description_words_surveillance", 30)
         caption_template = prompts.PROMPT_CAPTION_SURVEILLANCE
+        # Surveillance retry is dataset-specific (e.g. nwpu_campus defines a
+        # campus-flavored one that must not coax the model into inventing activity
+        # on near-empty clips). Datasets without one — e.g. a long generic video in
+        # surveillance mode — fall back to the generic retry.
+        retry_template = getattr(prompts, "PROMPT_CAPTION_RETRY_SURVEILLANCE",
+                                 prompts.PROMPT_CAPTION_RETRY)
     else:
         min_words = config.get("min_description_words", 100)
         caption_template = prompts.PROMPT_CAPTION
+        retry_template = prompts.PROMPT_CAPTION_RETRY
     max_retries = config.get("max_retries_short_desc", 2)
 
     completed = [{"scene_id": s["scene_id"], "start": s["start"],
@@ -246,8 +253,9 @@ def run_captioning(client: OpenAI, frame_dir: str, segments: list[dict],
             if word_count >= min_words:
                 break
             logger.warning(f"[Captioning] Scene {seg['scene_id']}: {word_count} words, retry {retry + 1}")
-            retry_prompt = prompts.PROMPT_CAPTION_RETRY.format(
-                word_count=word_count, previous_attempt=description, prefix_context=prefix)
+            retry_prompt = retry_template.format(
+                word_count=word_count, previous_attempt=description,
+                prefix_context=prefix, min_words=min_words)
             description = _vlm_call(client, video_content, retry_prompt, config)
             word_count = len(description.split())
 

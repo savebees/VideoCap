@@ -8,9 +8,10 @@ surveillance prompts for that setting. Anything not defined here falls back to
 
 A template only declares the placeholders it uses; the detection code fills
 subjects_hint solely when present, so this surveillance prompt omits it:
-- PROMPT_CAPTION_SURVEILLANCE: {prefix_context} {num_frames} {start} {end}
-- PROMPT_ACTIONS_SURVEILLANCE:  {num_frames} {start} {end} {duration}
-- PROMPT_DETECT_OBJECTS:        {parent_description}
+- PROMPT_CAPTION_SURVEILLANCE:       {prefix_context} {num_frames} {start} {end}
+- PROMPT_CAPTION_RETRY_SURVEILLANCE: {word_count} {previous_attempt} {min_words} {prefix_context}
+- PROMPT_ACTIONS_SURVEILLANCE:       {num_frames} {start} {end} {duration}
+- PROMPT_DETECT_OBJECTS:             {parent_description}
 """
 
 # ─── Dense Captioning ───
@@ -41,6 +42,27 @@ CONTENT RULES:
 - If the clip has no visible activity, say so briefly (e.g., "The walkway remains empty with no pedestrians or vehicles throughout the clip."). Brevity is fine in this case.
 - Describe ONLY what is visible. Do NOT speculate about intent, identity, or whether behavior is normal/abnormal. Avoid "appears to", "seems to", "might be".
 - DO NOT fabricate. If you cannot see it clearly, do not mention it.
+
+Output ONLY the description text."""
+
+
+# Campus surveillance retry: the clip may genuinely be near-empty, so this MUST NOT
+# push the model to invent activity to hit the word count — that is the failure mode
+# of reusing the generic expand-to-N-words retry on sparse fixed-camera footage. It
+# asks for a lower bar ({min_words}) and routes any expansion into the static setting.
+PROMPT_CAPTION_RETRY_SURVEILLANCE = """Your previous description of this campus surveillance clip was a bit short ({word_count} words).
+Here is what you wrote:
+---
+{previous_attempt}
+---
+
+Please rewrite to at least {min_words} words. This is a FIXED outdoor campus camera and the clip may genuinely have little or no activity (an empty walkway, road, or plaza) — that is normal and acceptable.
+
+- Do NOT invent pedestrians, cyclists, vehicles, motion, or events that are not visible just to reach the word count. Fabrication is worse than a short description.
+- If activity is sparse, reach the length by describing the STATIC setting more fully instead: the type of campus area and its layout, paths/roads, surrounding buildings, vegetation, signage, parked bicycles or vehicles, lighting, and time-of-day cues.
+- If the clip is truly empty, a brief honest statement that the area stays empty with no pedestrians or vehicles is a fully acceptable answer even if it stays short.
+
+{prefix_context}
 
 Output ONLY the description text."""
 
