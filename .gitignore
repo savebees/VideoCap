@@ -7,6 +7,8 @@ __pycache__/
 
 data/
 note/
+baseline/
+eval/
 
 # model weights
 *.pth
@@ -17,3 +19,4 @@ note/
 
 .DS_Store
 *.log
+results/

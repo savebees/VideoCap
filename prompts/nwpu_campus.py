@@ -3,8 +3,7 @@
 NWPU Campus is fixed-camera outdoor surveillance footage from 43 campus
 locations (pedestrians, cyclists, vehicles). Within a single video the camera is
 fixed: no pans, zooms, cuts, or scene changes. These prompts tune the generic
-surveillance prompts for that setting. Anything not defined here falls back to
-``prompts.general``.
+prompts for that setting. Anything not defined here falls back to ``prompts.general``.
 
 A template only declares the placeholders it uses; the detection code fills
 subjects_hint solely when present, so this surveillance prompt omits it:
@@ -25,10 +24,10 @@ You are given {num_frames} frames (1 fps) from this fixed campus camera, clip [{
 CONTEXT:
 - The camera is fixed: no pans, zooms, cuts, or shot changes. The location does NOT change between clips.
 - This is an outdoor campus scene (e.g. a walkway, road, plaza, building entrance, parking area, lawn). Typical subjects are pedestrians, cyclists, and vehicles.
-- Activity is often sparse. Empty stretches with no people or motion are NORMAL — describe them briefly and honestly. Do NOT invent activity to fill space.
+- Activity is often sparse, and many clips have little or no movement. That is normal. If little is happening, a short description is correct and expected. Do NOT invent activity to fill space.
 
 Cover these aspects in continuous prose:
-- The setting: type of campus area, paths/roads, surrounding buildings or structures, vegetation, lighting and time-of-day cues (daylight, dusk, night, artificial lighting).
+- The setting: type of campus area, paths/roads, surrounding buildings or structures, vegetation, lighting.
 - Any people, cyclists, or vehicles visible: appearance, clothing, what they are doing, the direction they move, and where they enter or exit the frame.
 - Notable static elements that ground the location (signage, doors, benches, lamp posts, parked bicycles or vehicles, road markings).
 
@@ -38,8 +37,8 @@ CRITICAL FORMAT RULES:
 
 CONTENT RULES:
 - Be specific and concrete: "a man in a black jacket cycles from left to right along the walkway" not "a person moves".
-- If previous clips above already described the static setting, do NOT re-describe it. Focus on what is NEW or CHANGED (new people, new movements, someone entering/leaving).
-- If the clip has no visible activity, say so briefly (e.g., "The walkway remains empty with no pedestrians or vehicles throughout the clip."). Brevity is fine in this case.
+- Describe only what you actually observe. If you do not see activity in part of the clip, simply do not describe activity there; you do not need to state that the scene is empty or static.
+- If previous clips above already described the static setting, do NOT re-describe the setting. Still describe any people, cyclists, or vehicles present in THIS clip, even if similar subjects appeared before.
 - Describe ONLY what is visible. Do NOT speculate about intent, identity, or whether behavior is normal/abnormal. Avoid "appears to", "seems to", "might be".
 - DO NOT fabricate. If you cannot see it clearly, do not mention it.
 
