@@ -2,6 +2,7 @@ import base64
 import logging
 import os
 import subprocess
+import tempfile
 
 logger = logging.getLogger(__name__)
 
@@ -46,18 +47,52 @@ def build_video_content(
     start_time: float | None = None,
     end_time: float | None = None,
 ) -> tuple[dict, int]:
+    """Pack the frames of a time window into a video content item for the VLM.
 
+    The frames are muxed into an MJPEG-in-AVI container stamped at ``fps`` rather
+    than sent as a bare concatenation of JPEGs. The container is what carries the
+    time base: vLLM decodes the video with OpenCV and reads ``fps`` off it, and
+    Qwen3-VL derives each frame's timestamp as ``frame_index / fps`` for its
+    temporal position encoding. A bare JPEG concatenation has no time base, so
+    OpenCV reports 1 fps and the model reads one frame as one second — harmless
+    when frames really are sampled at 1 fps, but at 6 fps it makes the model see an
+    8-second clip as 48 seconds and emit timestamps far outside the clip.
+
+    ``-c:v copy`` muxes the already-encoded JPEGs untouched, so this adds a time
+    base without re-encoding: same pixels the model saw before, plus correct time.
+    """
     frame_files = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
 
+    start_idx = 0
     if start_time is not None and end_time is not None:
         start_idx = int(start_time * fps)
         end_idx = int(end_time * fps)
         frame_files = frame_files[start_idx:end_idx]
 
-    b64_frames = []
-    for fname in frame_files:
-        with open(os.path.join(frame_dir, fname), "rb") as f:
-            b64_frames.append(base64.b64encode(f.read()).decode("ascii"))
+    if not frame_files:
+        raise RuntimeError(
+            f"No frames in {frame_dir} for window [{start_time}, {end_time}] at {fps} fps "
+            f"(frame index range [{start_idx}:{int((end_time or 0) * fps)}]). "
+            f"An empty window means the segment is degenerate or inverted."
+        )
 
-    data_url = "data:video/jpeg;base64," + ",".join(b64_frames)
-    return {"type": "video_url", "video_url": {"url": data_url}}, len(b64_frames)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        clip_path = os.path.join(tmp_dir, "clip.avi")
+        cmd = [
+            "ffmpeg", "-y",
+            "-framerate", f"{fps}",
+            "-start_number", str(start_idx),
+            "-i", os.path.join(frame_dir, "%06d.jpg"),
+            "-frames:v", str(len(frame_files)),
+            "-c:v", "copy",
+            "-r", f"{fps}",
+            clip_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"ffmpeg mux failed: {result.stderr}")
+        with open(clip_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode("ascii")
+
+    data_url = "data:video/avi;base64," + b64
+    return {"type": "video_url", "video_url": {"url": data_url}}, len(frame_files)

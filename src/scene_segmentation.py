@@ -101,11 +101,18 @@ def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
 
     duration = metadata["duration"]
     chunk_sec = float(config.get("long_video_chunk_sec", 120))
+    # A trailing remainder shorter than one frame interval contains no frame of
+    # its own; emitting it as a chunk yields a frame-less window (e.g. a 120.04s
+    # video → degenerate [120.0, 120.04] chunk) that fails captioning/detection
+    # with an empty image. Absorb such a tail into the preceding chunk instead.
+    frame_interval = 1.0 / float(config.get("video_fps", 1.0))
     segments: list[dict] = []
     start = 0.0
     scene_id = 1
     while start < duration - 1e-6:
         end = min(start + chunk_sec, duration)
+        if duration - end < frame_interval:
+            end = duration
         segments.append({
             "scene_id": scene_id,
             "start": round(start, 1),

@@ -15,16 +15,35 @@ from utils.vllm_client import get_extra_body
 
 logger = logging.getLogger(__name__)
 
+# Slack allowed on a clip-relative timestamp before it counts as out of range: the
+# VLM rounds to one decimal, so a boundary event can land just past the clip's end.
+TIMESTAMP_TOLERANCE = 0.15
+
 
 def _strip_thinking(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-def _parse_actions(raw_text: str) -> list[dict]:
+def _parse_actions(raw_text: str, clip_duration: float | None) -> list[dict]:
+    """Parse the VLM's action array.
+
+    ``clip_duration`` is set only for prompt sets declaring ACTIONS_TIMESTAMPS =
+    "relative", where the VLM reports times on the clip's own scale (0.0 = first
+    frame). Those are range-checked against the clip here — a value outside it is a
+    parse failure and retries — and the caller adds the scene offset. Prompt sets
+    asking for absolute times pass None and are parsed exactly as before.
+    """
     actions = parse_json_array(raw_text)
     for a in actions:
         assert all(k in a for k in ("action_id", "start", "end", "subject", "description"))
         a["start"], a["end"], a["action_id"] = float(a["start"]), float(a["end"]), int(a["action_id"])
+        if clip_duration is None:
+            continue
+        assert -TIMESTAMP_TOLERANCE <= a["start"] < a["end"] <= clip_duration + TIMESTAMP_TOLERANCE, (
+            f"action [{a['start']}, {a['end']}] outside clip [0.0, {clip_duration:.1f}]"
+        )
+        a["start"] = max(0.0, a["start"])
+        a["end"] = min(clip_duration, a["end"])
     return actions
 
 
@@ -32,11 +51,14 @@ def _segment_single_scene(client: OpenAI, frame_dir: str, fps: float,
                           scene: dict, config: dict, surveillance: bool = False) -> list[dict]:
     video_content, num_frames = build_video_content(
         frame_dir, fps, start_time=scene["start"], end_time=scene["end"])
+    clip_duration = scene["end"] - scene["start"]
     prompts = get_prompts(config.get("dataset_type"))
     template = prompts.PROMPT_ACTIONS_SURVEILLANCE if surveillance else prompts.PROMPT_ACTIONS
     prompt = template.format(
         num_frames=num_frames, start=scene["start"], end=scene["end"],
-        duration=scene["end"] - scene["start"], parent_description=scene["description"])
+        duration=clip_duration, parent_description=scene["description"])
+
+    relative = getattr(prompts, "ACTIONS_TIMESTAMPS", "absolute") == "relative"
 
     max_retries = config.get("max_retries", 3)
     for attempt in range(1, max_retries + 1):
@@ -53,12 +75,19 @@ def _segment_single_scene(client: OpenAI, frame_dir: str, fps: float,
         )
         raw_text = _strip_thinking(response.choices[0].message.content or "")
         try:
-            return _parse_actions(raw_text)
+            actions = _parse_actions(raw_text, clip_duration if relative else None)
+            if relative:
+                for a in actions:
+                    a["start"] = round(a["start"] + scene["start"], 1)
+                    a["end"] = round(a["end"] + scene["start"], 1)
+            return actions
         except (json.JSONDecodeError, AssertionError) as e:
             logger.warning(f"[Actions] Scene {scene['scene_id']} parse failed (attempt {attempt}): {e}")
             if attempt == max_retries:
-                raise RuntimeError(
-                    f"[Actions] Scene {scene['scene_id']}: failed after {max_retries} retries") from e
+                logger.warning(
+                    f"[Actions] Scene {scene['scene_id']}: no parseable actions after "
+                    f"{max_retries} retries; recording empty actions and continuing")
+                return []
 
 
 def run_actions(client: OpenAI, frame_dir: str, segments: list[dict],

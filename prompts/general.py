@@ -105,6 +105,12 @@ Output ONLY the expanded description text."""
 
 # ─── Action Annotation ───
 
+# Timestamp convention the action prompts below ask the VLM for. "absolute" = times
+# on the original video's timeline, which the VLM must produce by adding the scene's
+# offset itself. A dataset whose prompts instead ask for clip-relative times declares
+# ACTIONS_TIMESTAMPS = "relative" and lets src/actions.py add the offset in code.
+ACTIONS_TIMESTAMPS = "absolute"
+
 PROMPT_ACTIONS = """You are given {num_frames} frames (1 fps) from a video clip [{start:.1f}s - {end:.1f}s], which is {duration:.1f} seconds long.
 
 This clip belongs to the following scene:

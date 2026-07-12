@@ -17,11 +17,16 @@ _MODULES = {
     "default": "general",
     "general": "general",
     "nwpu_campus": "nwpu_campus",
+    "physics_iq": "physics_iq",
 }
 
 # dataset_types that are fixed-camera surveillance footage: the pipeline forces
 # surveillance mode (fixed-chunk segmentation + surveillance prompts) regardless
 # of clip duration, since even short clips are still single-camera surveillance.
+#
+# physics_iq is deliberately absent: its camera is fixed too, but the 8 s clips
+# are event-dense, so they take the normal short-video path (VLM segmentation on
+# physical phases + PROMPT_CAPTION + PROMPT_ACTIONS).
 _FORCE_SURVEILLANCE = {"nwpu_campus"}
 
 
