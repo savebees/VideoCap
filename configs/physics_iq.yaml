@@ -1,0 +1,56 @@
+# Physics-IQ: 198 fixed-camera tabletop physics clips, 8 s, 30 fps, 3840x2160.
+
+# Model
+vlm_model: "Qwen3.6-35B-A3B"
+vllm_base_url: "http://localhost:8000/v1"
+
+# Dataset
+dataset_type: "physics_iq"
+
+# Preprocessing: 6 fps divides the 30 fps source evenly; 48 frames matches the
+# judge's sampling density and gives sub-second events mid-event frames
+video_fps: 6.0
+frame_quality: 95
+frame_max_long_side: 672
+
+# Long-video mode (inert for 8 s clips)
+long_video_threshold_sec: 120
+long_video_chunk_sec: 120
+
+# Scene segmentation
+vlm_max_tokens_segmentation: 8192
+vlm_temperature_segmentation: 0.2
+vlm_presence_penalty_segmentation: 0.5
+
+# Dense captioning: 60-word floor — a single experiment phase carries less
+# content than a general scene; higher floors invite padding and fabrication
+prefix_context_num: 3
+min_description_words: 60
+vlm_max_tokens_captioning: 2048
+max_retries_short_desc: 2
+vlm_temperature_captioning: 0.7
+vlm_presence_penalty_captioning: 1.0
+
+# Actions: impacts and releases are sub-second; the 0.5 s default would drop them
+min_action_duration: 0.2
+vlm_max_tokens_actions: 4096
+vlm_temperature_actions: 0.2
+vlm_presence_penalty_actions: 0.0
+
+# Object detection: intra-frame two-pass NMS only, no cross-frame dedup
+detection_nms_threshold: 0.5
+detection_cross_label_iou_threshold: 0.9
+vlm_max_tokens_detection: 2048
+detection_concurrency: 32
+vlm_temperature_detection: 0.0
+vlm_presence_penalty_detection: 0.0
+
+# VLM general
+max_retries: 3
+enable_thinking: false
+vlm_top_p: 0.8
+vlm_top_k: 20
+
+# Paths: output_dir is where eval reads the pipeline and a3b systems from
+video_dir: "/nfshdd/21039533r/zxhe/datasets/physics_iq/30FPS"
+output_dir: "results/physics_iq"

@@ -1,0 +1,61 @@
+# Caption eval, NWPU + youtube. Reads pipeline/baseline OUTPUTS only; errors raise.
+# Everything is keyed by (split, video_id): Test and Train share 221 filenames.
+
+# Systems under test. kind decides where the caption comes from:
+#   pipeline -> {out}/{id}/annotation.json (assembled)
+#   a3b      -> {out}/{id}/baseline.json
+#   model    -> {results_root}/{name}/{split}/{id}.json
+systems:
+  - {name: pipeline,        kind: pipeline}
+  - {name: qwen3.6-a3b,     kind: a3b}
+  - {name: qwen2.5-vl-32b,  kind: model}
+  - {name: internvl3-38b,   kind: model}
+  - {name: internvl3.5-38b, kind: model}
+  - {name: llama-vid-7b,    kind: model}
+  - {name: qwen2.5-vl-7b,   kind: model}
+
+results_root: baseline/results
+
+# dir = source videos (judge frames come from these); out = pipeline output dir
+splits:
+  Test:    {dir: /nfshdd/21039533r/zxhe/datasets/nwpu_campus/NWPUCampusDataset/videos/Test,  ext: .avi, out: results/nwpu_campus/Test,  dataset: nwpu_campus}
+  Train:   {dir: /nfshdd/21039533r/zxhe/datasets/nwpu_campus/NWPUCampusDataset/videos/Train, ext: .avi, out: results/nwpu_campus/Train, dataset: nwpu_campus}
+  youtube: {dir: /nfshdd/21039533r/zxhe/datasets/youtube,                                    ext: .mp4, out: results/youtube,           dataset: youtube}
+
+# Visual judge: Gemma3-27B-it — independent family from every system under test.
+# Frames go as multiple image_url items (48 uniform frames per clip).
+judge_model: "gemma-3-27b-it"
+judge_base_url: "http://localhost:8010/v1"
+judge_frames: 48
+negation_frames: 48            # denser batch reserved for negation claims
+judge_concurrency: 16
+judge_retries: 4
+judge_claim_batch: 5           # small batches keep Gemma3 from dropping verdicts
+judge_max_tokens: 4096
+judge_temperature: 0.0
+judge_frequency_penalty: 0.5   # breaks greedy repetition loops without changing verdicts
+judge_extra_body: {}           # Gemma3 has no thinking mode
+
+# Text LLM (claim decomposition + omission): second Gemma3 replica on :8011
+claim_model: "gemma-3-27b-it"
+claim_base_url: "http://localhost:8011/v1"
+claim_concurrency: 16
+claim_retries: 4
+claim_max_tokens: 4096
+claim_temperature: 0.0
+claim_top_k: 20
+
+# Richness
+min_words: 30
+spacy_model: "en_core_web_sm"
+
+# CLIP alignment (clip_score.py, separate pass; coarse sanity check)
+clip_frames: 16
+
+# Judge frame encoding
+frame_max_long_side: 672
+frame_quality: 90
+
+# Output / cache: metrics land in {output_root}/{dataset}/metrics/
+output_root: results
+cache_dir: "eval/cache"
