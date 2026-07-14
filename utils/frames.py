@@ -47,20 +47,9 @@ def build_video_content(
     start_time: float | None = None,
     end_time: float | None = None,
 ) -> tuple[dict, int]:
-    """Pack the frames of a time window into a video content item for the VLM.
-
-    The frames are muxed into an MJPEG-in-AVI container stamped at ``fps`` rather
-    than sent as a bare concatenation of JPEGs. The container is what carries the
-    time base: vLLM decodes the video with OpenCV and reads ``fps`` off it, and
-    Qwen3-VL derives each frame's timestamp as ``frame_index / fps`` for its
-    temporal position encoding. A bare JPEG concatenation has no time base, so
-    OpenCV reports 1 fps and the model reads one frame as one second — harmless
-    when frames really are sampled at 1 fps, but at 6 fps it makes the model see an
-    8-second clip as 48 seconds and emit timestamps far outside the clip.
-
-    ``-c:v copy`` muxes the already-encoded JPEGs untouched, so this adds a time
-    base without re-encoding: same pixels the model saw before, plus correct time.
-    """
+    """Mux the window's frames into an fps-stamped MJPEG/AVI (-c:v copy, no
+    re-encode). The container carries the time base: bare JPEG concatenation
+    decodes as 1 fps, so at 6 fps the model would read an 8 s clip as 48 s."""
     frame_files = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
 
     start_idx = 0

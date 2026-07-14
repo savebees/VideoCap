@@ -1,19 +1,9 @@
-"""NWPU Campus dataset prompts.
-
-NWPU Campus is fixed-camera outdoor surveillance footage from 43 campus
-locations (pedestrians, cyclists, vehicles). Within a single video the camera is
-fixed: no pans, zooms, cuts, or scene changes. These prompts tune the generic
-prompts for that setting. Anything not defined here falls back to ``prompts.general``.
-
-A template only declares the placeholders it uses; the detection code fills
-subjects_hint solely when present, so this surveillance prompt omits it:
-- PROMPT_CAPTION_SURVEILLANCE:       {prefix_context} {num_frames} {start} {end}
-- PROMPT_CAPTION_RETRY_SURVEILLANCE: {word_count} {previous_attempt} {min_words} {prefix_context}
-- PROMPT_ACTIONS_SURVEILLANCE:       {num_frames} {start} {end} {duration}
-- PROMPT_DETECT_OBJECTS:             {parent_description}
+"""NWPU Campus prompts: fixed-camera outdoor campus surveillance.
+Anything not defined here falls back to prompts.general. Templates declare only
+the placeholders they use (this detection prompt omits {subjects_hint}).
 """
 
-# ─── Dense Captioning ───
+# Dense captioning
 
 PROMPT_CAPTION_SURVEILLANCE = """You are annotating footage from a FIXED outdoor surveillance camera on a university campus.
 
@@ -45,10 +35,8 @@ CONTENT RULES:
 Output ONLY the description text."""
 
 
-# Campus surveillance retry: the clip may genuinely be near-empty, so this MUST NOT
-# push the model to invent activity to hit the word count — that is the failure mode
-# of reusing the generic expand-to-N-words retry on sparse fixed-camera footage. It
-# asks for a lower bar ({min_words}) and routes any expansion into the static setting.
+# Must not coax the model into inventing activity on near-empty clips; expansion
+# is routed into the static setting instead.
 PROMPT_CAPTION_RETRY_SURVEILLANCE = """Your previous description of this campus surveillance clip was a bit short ({word_count} words).
 Here is what you wrote:
 ---
@@ -66,7 +54,7 @@ Please rewrite to at least {min_words} words. This is a FIXED outdoor campus cam
 Output ONLY the description text."""
 
 
-# ─── Action Annotation ───
+# Actions
 
 PROMPT_ACTIONS_SURVEILLANCE = """You are given {num_frames} frames (1 fps) from a FIXED outdoor campus surveillance camera, clip [{start:.1f}s - {end:.1f}s], duration {duration:.1f}s.
 
@@ -109,7 +97,7 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences. If nothing happens, output []."""
 
 
-# ─── Per-frame Object Detection ───
+# Per-frame object detection
 
 PROMPT_DETECT_OBJECTS = """You are given a single frame from a FIXED outdoor campus surveillance camera.
 

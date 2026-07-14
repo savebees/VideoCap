@@ -1,18 +1,11 @@
-"""Prompt registry.
-
-Prompts are organized per dataset. ``general`` holds the dataset-agnostic
-defaults; each dataset module (e.g. ``nwpu_campus``) defines only the prompts it
-needs to override, and anything it omits falls back to ``general``.
-
-Select a set with ``get_prompts(config.get("dataset_type"))`` and read prompts as
-attributes, e.g. ``prompts.PROMPT_CAPTION_SURVEILLANCE``.
+"""Per-dataset prompt registry. ``general`` holds defaults; a dataset module
+overrides only what it needs. Select with ``get_prompts(config["dataset_type"])``.
 """
 
 import importlib
 
 from prompts import general
 
-# dataset_type -> module name inside this package
 _MODULES = {
     "default": "general",
     "general": "general",
@@ -20,13 +13,9 @@ _MODULES = {
     "physics_iq": "physics_iq",
 }
 
-# dataset_types that are fixed-camera surveillance footage: the pipeline forces
-# surveillance mode (fixed-chunk segmentation + surveillance prompts) regardless
-# of clip duration, since even short clips are still single-camera surveillance.
-#
-# physics_iq is deliberately absent: its camera is fixed too, but the 8 s clips
-# are event-dense, so they take the normal short-video path (VLM segmentation on
-# physical phases + PROMPT_CAPTION + PROMPT_ACTIONS).
+# Datasets forced into surveillance mode (fixed chunks + surveillance prompts)
+# regardless of duration. physics_iq is fixed-camera too but event-dense, so it
+# takes the normal short-video path.
 _FORCE_SURVEILLANCE = {"nwpu_campus"}
 
 
@@ -60,7 +49,7 @@ def get_prompts(dataset_type: str | None = None) -> PromptSet:
     return PromptSet(module)
 
 
-# Backward-compat: keep `from prompts import PROMPT_X` working (defaults to general).
+# Backward-compat: `from prompts import PROMPT_X` resolves to general.
 from prompts.general import (  # noqa: E402
     PROMPT_SEGMENT,
     PROMPT_CAPTION,

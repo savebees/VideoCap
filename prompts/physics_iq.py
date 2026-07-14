@@ -1,27 +1,10 @@
-"""Physics-IQ Benchmark dataset prompts.
-
-Physics-IQ is fixed-camera footage of controlled tabletop physics experiments
-(66 scenarios, 3 camera perspectives, 8 second clips at 30 fps, 3840x2160).
-Each clip records a physical event: falling, rolling, and colliding objects,
-chain reactions, pouring and mixing fluids, burning, melting, light and shadow,
-magnetism. Subjects are objects and substances. Within a clip the camera is
-fixed and the setting stays constant.
-
-Prompts in this module are designed for this dataset; anything not defined here
-falls back to ``prompts.general``.
-
-A template only declares the placeholders it uses; extra format kwargs passed
-by the pipeline are ignored. PROMPT_ACTIONS deliberately omits
-{parent_description} to keep caption phrasing from contaminating action
-annotations:
-- PROMPT_SEGMENT:        {num_frames} {duration}
-- PROMPT_CAPTION:        {prefix_context} {num_frames} {start} {end}
-- PROMPT_CAPTION_RETRY:  {word_count} {previous_attempt} {min_words} {prefix_context}
-- PROMPT_ACTIONS:        {num_frames} {start} {end} {duration}
-- PROMPT_DETECT_OBJECTS: {parent_description}
+"""Physics-IQ prompts: fixed-camera tabletop physics experiments (8 s clips).
+Subjects are objects and substances. Falls back to prompts.general.
+PROMPT_ACTIONS deliberately omits {parent_description} so caption phrasing
+cannot contaminate action annotations.
 """
 
-# ─── Scene Segmentation ───
+# Scene segmentation
 
 PROMPT_SEGMENT = """You are given {num_frames} frames sampled at a uniform rate from a video that is {duration:.1f} seconds long.
 
@@ -55,7 +38,7 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences."""
 
 
-# ─── Dense Captioning ───
+# Dense captioning
 
 PROMPT_CAPTION = """You are annotating footage of a controlled tabletop physics experiment recorded by a FIXED camera.
 
@@ -107,12 +90,10 @@ Please rewrite and EXPAND this description to at least {min_words} words.
 Output ONLY the expanded description text."""
 
 
-# ─── Action Annotation ───
+# Actions
 
-# The VLM sees each scene as a standalone clip starting at 0.0, so it reports times on
-# that clip's own scale and src/actions.py adds the scene offset. Asking it for absolute
-# times instead made it add the offset itself, which it did inconsistently — one scene
-# offset correctly, the next emitted times that fell outside its own scene window.
+# The VLM sees a 0-based subclip; it reports clip-local times and code adds the
+# offset (asking for absolute times made it do the addition inconsistently).
 ACTIONS_TIMESTAMPS = "relative"
 
 PROMPT_ACTIONS = """You are given {num_frames} frames sampled at a uniform rate from a FIXED camera recording of a tabletop physics experiment. The frames form one clip that is {duration:.1f} seconds long.
@@ -167,7 +148,7 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences. If nothing happens, output []."""
 
 
-# ─── Per-frame Object Detection ───
+# Per-frame object detection
 
 PROMPT_DETECT_OBJECTS = """You are given a single frame from a FIXED camera recording of a tabletop physics experiment.
 

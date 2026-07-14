@@ -25,14 +25,9 @@ def _strip_thinking(text: str) -> str:
 
 
 def _parse_actions(raw_text: str, clip_duration: float | None) -> list[dict]:
-    """Parse the VLM's action array.
-
-    ``clip_duration`` is set only for prompt sets declaring ACTIONS_TIMESTAMPS =
-    "relative", where the VLM reports times on the clip's own scale (0.0 = first
-    frame). Those are range-checked against the clip here — a value outside it is a
-    parse failure and retries — and the caller adds the scene offset. Prompt sets
-    asking for absolute times pass None and are parsed exactly as before.
-    """
+    """Parse the VLM's action array. clip_duration is set only for relative-time
+    prompt sets: values are range-checked (out of range = parse failure = retry)
+    and the caller adds the scene offset. None = absolute times, no check."""
     actions = parse_json_array(raw_text)
     for a in actions:
         assert all(k in a for k in ("action_id", "start", "end", "subject", "description"))

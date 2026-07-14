@@ -1,4 +1,4 @@
-# ─── Scene Segmentation ───
+# Scene segmentation
 
 PROMPT_SEGMENT = """You are given {num_frames} frames (sampled at 1 fps) from a video that is {duration:.1f} seconds long.
 
@@ -32,7 +32,7 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences."""
 
 
-# ─── Dense Captioning with Prefix Context ───
+# Dense captioning
 
 PROMPT_CAPTION = """You are a professional video annotator. Describe this video clip in rich, specific detail.
 
@@ -103,12 +103,10 @@ Please rewrite and EXPAND this description to at least {min_words} words. Add mo
 Output ONLY the expanded description text."""
 
 
-# ─── Action Annotation ───
+# Actions
 
-# Timestamp convention the action prompts below ask the VLM for. "absolute" = times
-# on the original video's timeline, which the VLM must produce by adding the scene's
-# offset itself. A dataset whose prompts instead ask for clip-relative times declares
-# ACTIONS_TIMESTAMPS = "relative" and lets src/actions.py add the offset in code.
+# "absolute": the VLM reports times on the original video's timeline itself.
+# "relative": the VLM reports clip-local times and src/actions.py adds the offset.
 ACTIONS_TIMESTAMPS = "absolute"
 
 PROMPT_ACTIONS = """You are given {num_frames} frames (1 fps) from a video clip [{start:.1f}s - {end:.1f}s], which is {duration:.1f} seconds long.
@@ -186,7 +184,7 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences. If nothing happens, output []."""
 
 
-# ─── Per-frame Object Detection (VLM with vision) ───
+# Per-frame object detection
 
 PROMPT_DETECT_OBJECTS = """You are given a single frame from a video clip.
 

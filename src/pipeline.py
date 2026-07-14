@@ -163,9 +163,7 @@ def process_video(video_path: str, config: dict) -> tuple[str, str]:
             segments = run_segmentation(client, frame_dir, metadata, config)
     raw_segments_count = len(segments)
     with _timer(timings, "validation"):
-        # Always validate: fixed chunks are contiguous, but the last chunk's end
-        # is round(duration, 1), which can drift from the true duration — boundary
-        # validation snaps it back to the exact duration.
+        # Always validate: the last chunk's rounded end can drift from true duration.
         segments, boundary_repairs = run_boundary_validation(
             segments, metadata["duration"], config, video_id)
     with _timer(timings, "captioning"):

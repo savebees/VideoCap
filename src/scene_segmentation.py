@@ -20,7 +20,7 @@ def _strip_thinking(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-# ─── Scene segmentation ───
+# Scene segmentation
 
 def _parse_segments(raw_text: str) -> list[dict]:
     segments = parse_json_array(raw_text)
@@ -86,12 +86,8 @@ def run_segmentation(client: OpenAI, frame_dir: str, metadata: dict, config: dic
 
 
 def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
-    """Long-video path: fixed-time scene chunks, no VLM call.
-
-    Surveillance footage is single-camera with a stable setting, so VLM-based
-    segmentation is wasteful and unreliable across 10+ minute clips. We slice
-    deterministically into chunk_sec windows; description is filled by captioning.
-    """
+    """Long-video path: deterministic fixed-time chunks, no VLM call.
+    VLM segmentation is unreliable over 10+ min single-camera footage."""
     video_id = metadata["video_id"]
     cache_path = os.path.join(config["output_dir"], video_id, "segments.json")
     if os.path.exists(cache_path):
@@ -101,16 +97,13 @@ def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
 
     duration = metadata["duration"]
     chunk_sec = float(config.get("long_video_chunk_sec", 120))
-    # A trailing remainder shorter than one frame interval contains no frame of
-    # its own; emitting it as a chunk yields a frame-less window (e.g. a 120.04s
-    # video → degenerate [120.0, 120.04] chunk) that fails captioning/detection
-    # with an empty image. Absorb such a tail into the preceding chunk instead.
     frame_interval = 1.0 / float(config.get("video_fps", 1.0))
     segments: list[dict] = []
     start = 0.0
     scene_id = 1
     while start < duration - 1e-6:
         end = min(start + chunk_sec, duration)
+        # a tail shorter than one frame interval has no frame of its own; absorb it
         if duration - end < frame_interval:
             end = duration
         segments.append({
@@ -129,7 +122,7 @@ def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
     return segments
 
 
-# ─── Boundary validation ───
+# Boundary validation
 
 def run_boundary_validation(segments: list[dict], duration: float, config: dict, video_id: str) -> tuple[list[dict], int]:
     """Programmatic boundary repair."""
@@ -183,7 +176,7 @@ def run_boundary_validation(segments: list[dict], duration: float, config: dict,
     return segments, repairs
 
 
-# ─── Dense captioning ───
+# Dense captioning
 
 def _build_prefix(descriptions: list[dict], max_prev: int = 3) -> str:
     if not descriptions:
@@ -228,10 +221,7 @@ def run_captioning(client: OpenAI, frame_dir: str, segments: list[dict],
     if surveillance:
         min_words = config.get("min_description_words_surveillance", 30)
         caption_template = prompts.PROMPT_CAPTION_SURVEILLANCE
-        # Surveillance retry is dataset-specific (e.g. nwpu_campus defines a
-        # campus-flavored one that must not coax the model into inventing activity
-        # on near-empty clips). Datasets without one — e.g. a long generic video in
-        # surveillance mode — fall back to the generic retry.
+        # Dataset-specific surveillance retry if defined, else the generic one.
         retry_template = getattr(prompts, "PROMPT_CAPTION_RETRY_SURVEILLANCE",
                                  prompts.PROMPT_CAPTION_RETRY)
     else:

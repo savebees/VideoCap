@@ -1,57 +1,53 @@
-# ── Model ──
+# Model
 vlm_model: "Qwen3.6-35B-A3B"
 vllm_base_url: "http://localhost:8000/v1"
 
-# ── Dataset ──
-# Selects the prompt set from the prompts/ package. "default" = generic prompts.
-# "nwpu_campus" = fixed-camera campus surveillance (forces surveillance mode for
-# all clips regardless of duration). Override per-run with --dataset_type.
+# Dataset: selects the prompt set from prompts/ (override with --dataset_type)
 dataset_type: "default"
 
-# ── Preprocessing ──
+# Preprocessing
 video_fps: 1.0
 frame_quality: 95
 frame_max_long_side: 672
 
-# ── Long-video Mode ──
-long_video_threshold_sec: 120           
-long_video_chunk_sec: 120              
+# Long-video mode
+long_video_threshold_sec: 120
+long_video_chunk_sec: 120
 
-# ── Scene Segmentation ──
+# Scene segmentation
 vlm_max_tokens_segmentation: 8192
-vlm_temperature_segmentation: 0.2       # structured JSON: low temp for stable boundaries/timestamps
+vlm_temperature_segmentation: 0.2
 vlm_presence_penalty_segmentation: 0.5
 
-# ── Dense Captioning ──
+# Dense captioning
 prefix_context_num: 3
 min_description_words: 100
-min_description_words_surveillance: 30   # lower bar: empty surveillance clips don't need 100 words
+min_description_words_surveillance: 30
 vlm_max_tokens_captioning: 2048
 max_retries_short_desc: 2
-vlm_temperature_captioning: 0.7         # prose: keep diversity for rich descriptions
+vlm_temperature_captioning: 0.7
 vlm_presence_penalty_captioning: 1.0
 
-# ── Actions ──
+# Actions
 min_action_duration: 0.5
 vlm_max_tokens_actions: 4096
-vlm_temperature_actions: 0.2            # structured JSON: low temp, no presence penalty
+vlm_temperature_actions: 0.2
 vlm_presence_penalty_actions: 0.0
 
-# ── Object Detection ──
-# Dedup is intra-frame only (two-pass NMS, keep larger box); there is no cross-frame dedup.
-detection_nms_threshold: 0.5            # pass 1 — same label + IoU > this → drop duplicate
-detection_cross_label_iou_threshold: 0.9  # pass 2 — near-identical boxes (different labels) IoU > this → same object, drop. High bar spares distinct overlaps (person vs the bag they hold)
+# Object detection: intra-frame two-pass NMS only, no cross-frame dedup
+detection_nms_threshold: 0.5              # pass 1: same label
+detection_cross_label_iou_threshold: 0.9  # pass 2: label drift; high bar spares real overlaps
 vlm_max_tokens_detection: 2048
-detection_concurrency: 32               # concurrent per-frame detection requests
-vlm_temperature_detection: 0.0          # greedy for grounding
+detection_concurrency: 32
+vlm_temperature_detection: 0.0
 vlm_presence_penalty_detection: 0.0
 
-# ── VLM General ──
+# VLM general
 max_retries: 3
 enable_thinking: false
 vlm_top_p: 0.8
 vlm_top_k: 20
 
-# ── Paths ──
+# Paths
 video_dir: "data/videos"
 output_dir: "data/output"

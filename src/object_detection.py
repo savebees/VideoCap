@@ -38,9 +38,7 @@ def _box_area(box: list) -> float:
 
 
 def _greedy_suppress(dets: list[dict], iou_threshold: float) -> list[dict]:
-    """Greedy NMS over boxes pre-sorted by descending area: keep each surviving
-    box and suppress later boxes overlapping it beyond iou_threshold (so the
-    larger box wins, since Qwen3-VL grounding emits no confidence)."""
+    """Greedy NMS over area-sorted boxes; larger box wins (grounding has no confidence)."""
     kept = []
     suppressed = [False] * len(dets)
     for i in range(len(dets)):
@@ -55,16 +53,9 @@ def _greedy_suppress(dets: list[dict], iou_threshold: float) -> list[dict]:
 
 def _intra_frame_nms(detections: list[dict], iou_threshold: float,
                      cross_label_threshold: float) -> list[dict]:
-    """Within a single frame, drop duplicate boxes for the same physical object.
-
-    There is NO cross-frame dedup; each frame is deduplicated independently in
-    two passes, both keeping the larger (more complete) box:
-      1. Same-label: same label + IoU > iou_threshold is a duplicate.
-      2. Cross-label: near-identical boxes (IoU > cross_label_threshold) are the
-         same object even when their labels drifted ("man in black jacket" vs
-         "person in dark jacket"). The high threshold preserves genuinely
-         distinct overlapping objects (a person and the bag they hold).
-    """
+    """Two-pass intra-frame dedup, keeping the larger box: (1) same label +
+    IoU > iou_threshold; (2) near-identical boxes across drifted labels
+    (IoU > cross_label_threshold, high bar spares real overlaps). No cross-frame."""
     if not detections:
         return []
 
@@ -150,14 +141,12 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
             items = parse_json_array(raw)
             results = []
             for item in items:
-                # Qwen3-VL native grounding emits only label + bbox_2d (no
-                # confidence — matching the official grounding format).
                 if "label" not in item or "bbox_2d" not in item:
                     continue
                 bb = item["bbox_2d"]
                 if len(bb) != 4:
                     continue
-                # Rescale 0-1000 normalized to pixel coordinates of THIS frame jpg.
+                # 0-1000 normalized -> pixel coords of this frame jpg
                 x1 = round(float(bb[0]) / 1000 * frame_w)
                 y1 = round(float(bb[1]) / 1000 * frame_h)
                 x2 = round(float(bb[2]) / 1000 * frame_w)
@@ -198,7 +187,6 @@ def run_detection(client: OpenAI, frame_dir: str, segments: list[dict],
 
     fps = config.get("video_fps", 1.0)
     concurrency = max(1, int(config.get("detection_concurrency", 8)))
-    # detection_nms_threshold is read directly inside _detect_one_frame for intra-frame NMS.
 
     frame_files = sorted(f for f in os.listdir(frame_dir) if f.endswith(".jpg"))
     if not frame_files:
