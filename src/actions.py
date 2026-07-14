@@ -89,7 +89,7 @@ def run_actions(client: OpenAI, frame_dir: str, segments: list[dict],
                 metadata: dict, config: dict, surveillance: bool = False) -> list[dict]:
     """Per-scene VLM calls to annotate visual actions. Allows overlap and gaps."""
     video_id = metadata["video_id"]
-    cache_path = os.path.join(config["output_dir"], video_id, "segments_with_actions.json")
+    cache_path = os.path.join(config["output_dir"], video_id, "actions.json")
     if os.path.exists(cache_path):
         logger.info(f"[Actions] {video_id}: cached")
         with open(cache_path) as f:

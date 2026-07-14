@@ -190,8 +190,8 @@ def process_video(video_path: str, config: dict) -> tuple[str, str]:
 def clear_cache(video_path: str, config: dict):
     video_id = os.path.splitext(os.path.basename(video_path))[0]
     output_dir = os.path.join(config["output_dir"], video_id)
-    for fname in ("segments.json", "segments_validated.json", "segments_captioned.json",
-                  "segments_with_actions.json", "detections.json",
+    for fname in ("segments.json", "validated.json", "captions.json",
+                  "actions.json", "detections.json",
                   "annotation.json", "objects.json"):
         fpath = os.path.join(output_dir, fname)
         if os.path.exists(fpath):

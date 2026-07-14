@@ -126,7 +126,7 @@ def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
 
 def run_boundary_validation(segments: list[dict], duration: float, config: dict, video_id: str) -> tuple[list[dict], int]:
     """Programmatic boundary repair."""
-    cache_path = os.path.join(config["output_dir"], video_id, "segments_validated.json")
+    cache_path = os.path.join(config["output_dir"], video_id, "validated.json")
     if os.path.exists(cache_path):
         logger.info(f"[Validation] {video_id}: cached")
         with open(cache_path) as f:
@@ -208,7 +208,7 @@ def run_captioning(client: OpenAI, frame_dir: str, segments: list[dict],
                    metadata: dict, config: dict, surveillance: bool = False) -> list[dict]:
     """Dense captioning with prefix context."""
     video_id = metadata["video_id"]
-    cache_path = os.path.join(config["output_dir"], video_id, "segments_captioned.json")
+    cache_path = os.path.join(config["output_dir"], video_id, "captions.json")
     if os.path.exists(cache_path):
         logger.info(f"[Captioning] {video_id}: cached")
         with open(cache_path) as f:
