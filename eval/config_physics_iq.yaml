@@ -1,0 +1,57 @@
+# Caption eval, Physics-IQ only. Kept separate from config.yaml: run_eval
+# enumerates every split x system and raises on missing captions, so adding
+# physics_iq there would re-walk NWPU and hard-fail until all systems finish.
+# The cache is shared (keys are {split}__{video_id}; no collision with NWPU).
+
+# Every system listed must have all 198 clips, or the eval raises.
+systems:
+  - {name: pipeline,        kind: pipeline}
+  - {name: qwen3.6-a3b,     kind: a3b}
+  - {name: qwen2.5-vl-32b,  kind: model}
+  - {name: internvl3-38b,   kind: model}
+  - {name: internvl3.5-38b, kind: model}
+  - {name: llama-vid-7b,    kind: model}
+  - {name: qwen2.5-vl-7b,   kind: model}
+
+results_root: baseline/results
+
+# out must match configs/physics_iq.yaml output_dir
+splits:
+  physics_iq: {dir: /nfshdd/21039533r/zxhe/datasets/physics_iq/30FPS, ext: .mp4, out: results/physics_iq, dataset: physics_iq}
+
+# Judge / text LLM: same setup as config.yaml. 48 frames over 8 s = 6 fps,
+# dense enough for the sub-second events the captions describe.
+judge_model: "gemma-3-27b-it"
+judge_base_url: "http://localhost:8010/v1"
+judge_frames: 48
+negation_frames: 48
+judge_concurrency: 16
+judge_retries: 4
+judge_claim_batch: 5
+judge_max_tokens: 4096
+judge_temperature: 0.0
+judge_frequency_penalty: 0.5
+judge_extra_body: {}
+
+claim_model: "gemma-3-27b-it"
+claim_base_url: "http://localhost:8011/v1"
+claim_concurrency: 16
+claim_retries: 4
+claim_max_tokens: 4096
+claim_temperature: 0.0
+claim_top_k: 20
+
+# Richness
+min_words: 30
+spacy_model: "en_core_web_sm"
+
+# CLIP alignment
+clip_frames: 16
+
+# Judge frame encoding
+frame_max_long_side: 672
+frame_quality: 90
+
+# Output / cache (shared cache with config.yaml; distinct split keys)
+output_root: results
+cache_dir: "eval/cache"

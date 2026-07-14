@@ -1,22 +1,37 @@
+# Python
 __pycache__/
 *.pyc
 *.egg-info/
 .venv/
 
+# OS 
+.DS_Store
 .claude
 
-data/
+# Private notes
 note/
-baseline/
-eval/
 
-# model weights
+# Inputs
+data/
+
+# Outputs: annotations, metrics, run artifacts
+results/
+logs/
+*.log
+
+# Run artifacts (code stays tracked)
+baseline/results/
+baseline/cfg_*
+eval/cache/
+eval/results/
+
+# Models (download from HuggingFace)
+models/
 *.pth
 *.pt
 *.bin
 *.safetensors
 *.ckpt
-
-.DS_Store
-*.log
-results/
+*.gguf
+*.msgpack
+*.h5

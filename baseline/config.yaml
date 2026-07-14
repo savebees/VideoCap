@@ -1,0 +1,22 @@
+# Naive A3B baseline: same served model as the pipeline, so the comparison
+# isolates the pipeline/prompt variable. Independent of configs/*.yaml.
+
+# Second vLLM replica (GPUs 4-7) so the baseline never competes with annotation
+vlm_model: "Qwen3.6-35B-A3B"
+vllm_base_url: "http://localhost:8001/v1"
+
+# Frame sampling: n uniform frames across the whole video
+num_frames: 32
+frame_quality: 95
+frame_max_long_side: 672
+
+# Sampling params
+vlm_temperature: 0.7
+vlm_presence_penalty: 1.5
+vlm_max_tokens: 2048
+vlm_top_p: 0.8
+vlm_top_k: 20
+enable_thinking: false
+
+# Paths
+output_dir: "data/output"
