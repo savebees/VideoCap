@@ -51,14 +51,18 @@ prompts avoid stillness assertions to reduce it.
 ## Running
 
 ```bash
-# NWPU (+ youtube)
+# 1. Set up the eval env (once)
+pip install -r eval/requirements.txt
+python -m spacy download en_core_web_sm      # spaCy model, not installed by pip
+
+# 2. Serve the judge and text replicas
 bash eval/serve_judge.sh &   # then serve_text.sh
-python eval/run_eval.py --config eval/config.yaml
 
-# Physics-IQ (checks completeness, serves judges, evals, tears down)
-bash eval/run_physics_iq.sh
+# 3. Run the eval
+python eval/run_eval.py --config eval/config.yaml   # NWPU (+ youtube)
+bash eval/run_physics_iq.sh                         # Physics-IQ (self-contained: checks completeness, serves judges, evals, tears down)
 
-# CLIP column (GPU or CPU; independent of the judge run)
+# 4. CLIP column (GPU or CPU, independent of the judge run)
 python eval/clip_score.py --config <cfg> --model-path <clip-vit-large-patch14>
 python eval/clip_score.py --config <cfg> --model-path <...> --merge
 ```
