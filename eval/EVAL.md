@@ -67,6 +67,9 @@ python eval/clip_score.py --config <cfg> --model-path <clip-vit-large-patch14>
 python eval/clip_score.py --config <cfg> --model-path <...> --merge
 ```
 
+The eval summary is collected under the repo-root `results/` directory for each
+dataset: `results/{dataset}/metrics/summary.csv` (e.g. `results/nwpu_campus/metrics/summary.csv`).
+
 `run_eval.py` needs spacy (pins numpy<2) — keep it in a separate env from the
 vLLM servers (numpy 2.x) and let them talk over HTTP; see `run_physics_iq.sh`.
 
