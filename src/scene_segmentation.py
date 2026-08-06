@@ -85,9 +85,9 @@ def run_segmentation(client: OpenAI, frame_dir: str, metadata: dict, config: dic
     return segments
 
 
-def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
-    """Long-video path: deterministic fixed-time chunks, no VLM call.
-    VLM segmentation is unreliable over 10+ min single-camera footage."""
+def run_fixed_chunk_segmentation(client: OpenAI, frame_dir: str,
+                                 metadata: dict, config: dict) -> list[dict]:
+    """Long/surveillance path: deterministic boundaries with per-chunk briefs."""
     video_id = metadata["video_id"]
     cache_path = os.path.join(config["output_dir"], video_id, "segments.json")
     if os.path.exists(cache_path):
@@ -97,7 +97,9 @@ def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
 
     duration = metadata["duration"]
     chunk_sec = float(config.get("long_video_chunk_sec", 120))
-    frame_interval = 1.0 / float(config.get("video_fps", 1.0))
+    fps = float(config.get("video_fps", 1.0))
+    frame_interval = 1.0 / fps
+    prompt_template = get_prompts(config.get("dataset_type")).PROMPT_BRIEF
     segments: list[dict] = []
     start = 0.0
     scene_id = 1
@@ -106,11 +108,19 @@ def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
         # a tail shorter than one frame interval has no frame of its own; absorb it
         if duration - end < frame_interval:
             end = duration
+        video_content, num_frames = build_video_content(
+            frame_dir, fps, start_time=start, end_time=end)
+        prompt = prompt_template.format(
+            num_frames=num_frames, start=start, end=end)
+        brief = _vlm_brief_call(
+            client, video_content, prompt, config,
+            tag=f"[Segmentation] {video_id}: scene {scene_id} brief",
+        )
         segments.append({
             "scene_id": scene_id,
             "start": round(start, 1),
             "end": round(end, 1),
-            "brief": "",
+            "brief": brief,
         })
         start = end
         scene_id += 1
@@ -118,8 +128,31 @@ def run_fixed_chunk_segmentation(metadata: dict, config: dict) -> list[dict]:
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     with open(cache_path, "w") as f:
         json.dump(segments, f, indent=2)
-    logger.info(f"[Segmentation] {video_id}: {len(segments)} fixed {chunk_sec:.0f}s chunks (long-video mode)")
+    logger.info(f"[Segmentation] {video_id}: {len(segments)} fixed {chunk_sec:.0f}s chunks (fixed-chunk mode)")
     return segments
+
+
+# Brief annotation
+
+def _vlm_brief_call(client: OpenAI, video_content: dict, prompt: str,
+                    config: dict, tag: str) -> str:
+    """Generate the brief for one deterministic scene chunk."""
+    logger.info(tag)
+    response = client.chat.completions.create(
+        model=config["vlm_model"],
+        messages=[{"role": "user", "content": [
+            video_content, {"type": "text", "text": prompt},
+        ]}],
+        temperature=config.get("vlm_temperature_segmentation", 0.2),
+        top_p=config.get("vlm_top_p", 0.8),
+        presence_penalty=config.get("vlm_presence_penalty_segmentation", 0.5),
+        max_tokens=config.get("vlm_max_tokens_brief", 256),
+        extra_body=get_extra_body(config),
+    )
+    brief = _strip_thinking(response.choices[0].message.content or "")
+    if not brief:
+        raise ValueError(f"{tag}: empty brief")
+    return brief
 
 
 # Boundary validation

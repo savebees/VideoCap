@@ -158,7 +158,8 @@ def process_video(video_path: str, config: dict) -> tuple[str, str]:
     # scene segmentation + description
     with _timer(timings, "segmentation"):
         if is_long:
-            segments = run_fixed_chunk_segmentation(metadata, config)
+            segments = run_fixed_chunk_segmentation(
+                client, frame_dir, metadata, config)
         else:
             segments = run_segmentation(client, frame_dir, metadata, config)
     raw_segments_count = len(segments)

@@ -3,6 +3,13 @@ Anything not defined here falls back to prompts.general. Templates declare only
 the placeholders they use (this detection prompt omits {subjects_hint}).
 """
 
+# Segment brief annotation
+
+PROMPT_BRIEF = """You are given {num_frames} uniformly sampled frames from a fixed outdoor campus surveillance segment [{start:.1f}s - {end:.1f}s].
+
+Generate a concise brief description for this segment. Describe only what is visible and do not speculate. Output only the brief text."""
+
+
 # Dense captioning
 
 PROMPT_CAPTION_SURVEILLANCE = """You are annotating footage from a FIXED outdoor surveillance camera on a university campus.

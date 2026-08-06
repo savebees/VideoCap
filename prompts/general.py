@@ -32,6 +32,14 @@ RULES:
 - Output ONLY the JSON array. No explanation, no markdown fences."""
 
 
+# Segment brief annotation for deterministic fixed chunks.
+PROMPT_BRIEF = """You are annotating one segment of a video.
+
+You are given {num_frames} uniformly sampled frames from the segment [{start:.1f}s - {end:.1f}s].
+
+Generate a concise brief description for this segment. Describe only what is visible and do not speculate. Output only the brief text."""
+
+
 # Dense captioning
 
 PROMPT_CAPTION = """You are a professional video annotator. Describe this video clip in rich, specific detail.

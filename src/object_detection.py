@@ -17,6 +17,33 @@ from utils.vllm_client import get_extra_body
 logger = logging.getLogger(__name__)
 
 
+DETECTION_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "detections",
+        "strict": True,
+        "schema": {
+            "type": "array",
+            "maxItems": 15,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "bbox_2d": {
+                        "type": "array",
+                        "items": {"type": "number"},
+                        "minItems": 4,
+                        "maxItems": 4,
+                    },
+                    "label": {"type": "string"},
+                },
+                "required": ["bbox_2d", "label"],
+                "additionalProperties": False,
+            },
+        },
+    },
+}
+
+
 def _strip_thinking(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
@@ -134,6 +161,7 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
             top_p=config.get("vlm_top_p", 0.8),
             presence_penalty=config.get("vlm_presence_penalty_detection", 0.0),
             max_tokens=config.get("vlm_max_tokens_detection", 2048),
+            response_format=DETECTION_RESPONSE_FORMAT,
             extra_body=get_extra_body(config),
         )
         raw = _strip_thinking(response.choices[0].message.content or "")
@@ -171,8 +199,7 @@ def _detect_one_frame(client: OpenAI, frame_path: str, scene: dict,
             logger.warning(f"[Detection] {os.path.basename(frame_path)} parse failed (attempt {attempt}): {e}")
             if attempt == max_retries:
                 logger.error(f"[Detection] {os.path.basename(frame_path)}: giving up after {max_retries} retries")
-                return []
-    return []
+                raise
 
 
 def run_detection(client: OpenAI, frame_dir: str, segments: list[dict],
