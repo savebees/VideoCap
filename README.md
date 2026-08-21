@@ -6,14 +6,6 @@ recipes, normalizes their outputs, and measures caption quality through
 independent metrics. The current focus is caption production and evaluation;
 question answering and other semantic annotations are downstream extensions.
 
-The architecture borrows the strongest engineering abstractions from
-[VLMEvalKit](https://github.com/open-compass/VLMEvalKit) and
-[lmms-eval](https://github.com/EvolvingLMMs-Lab/lmms-eval): explicit registries,
-a stable task protocol, dataset and recipe adapters, independent metrics,
-reproducible configuration, and standardized run artifacts. Annotation tasks are
-independent at the public boundary; an industrial recipe may have many internal
-stages.
-
 ## Install
 
 Python 3.10+ is required. Both uv and ordinary pip installations are supported:
