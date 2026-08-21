@@ -3,6 +3,19 @@ __pycache__/
 *.pyc
 *.egg-info/
 .venv/
+.pytest_cache/
+dist/
+
+# Local-only development material
+/examples/
+/tests/
+/docs/design/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
 
 # OS 
 .DS_Store
@@ -17,13 +30,8 @@ data/
 # Outputs: annotations, metrics, run artifacts
 results/
 logs/
+runs/
 *.log
-
-# Run artifacts (code stays tracked)
-baseline/results/
-baseline/cfg_*
-eval/cache/
-eval/results/
 
 # Models (download from HuggingFace)
 models/

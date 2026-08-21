@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dense-video-annotator"
+version = "0.1.0"
+description = "Production-oriented dense video captioning and quality evaluation"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = [
+  "jsonschema>=4.0.0",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0"]
+
+[dependency-groups]
+dev = ["pytest>=7.0"]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[project.scripts]
+dva = "dense_video_annotator.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["dense_video_annotator*"]
+
+[tool.setuptools.package-data]
+"dense_video_annotator.schemas" = ["*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]

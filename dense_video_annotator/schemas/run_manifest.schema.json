@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://savebees.github.io/dense-video-annotator/schemas/run-manifest-v0.1.json",
+  "title": "Dense Video Annotator Run Manifest",
+  "type": "object",
+  "required": [
+    "schema_version", "run_id", "created_at", "task", "recipe",
+    "dataset", "config_sha256", "seed", "git_dirty", "git_commit"
+  ],
+  "properties": {
+    "schema_version": {"const": "run-manifest/v0.1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"},
+    "task": {"$ref": "#/$defs/component"},
+    "recipe": {"$ref": "#/$defs/component"},
+    "dataset": {"$ref": "#/$defs/dataset"},
+    "config_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "seed": {"type": "integer", "minimum": 0},
+    "git_dirty": {"type": "boolean"},
+    "git_commit": {"type": ["string", "null"], "minLength": 1}
+  },
+  "$defs": {
+    "component": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "dataset": {
+      "type": "object",
+      "required": ["name", "version", "fingerprint"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "version": {"type": "string", "minLength": 1},
+        "fingerprint": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

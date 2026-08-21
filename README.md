@@ -1,158 +1,150 @@
-<h1 align="center">Dense Video Annotator</h1>
+# Dense Video Annotator
 
-<p align="center">
-  <a href="#"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python 3.10+"></a>
-  <a href="#"><img src="https://img.shields.io/badge/serving-vLLM-orange.svg" alt="vLLM"></a>
-  <a href="#"><img src="https://img.shields.io/badge/VLM-Qwen3.6--A3B-8A2BE2.svg" alt="Qwen3.6-35B-A3B"></a>
-  <a href="#"><img src="https://img.shields.io/badge/outputs-JSON%20Schema%20-green.svg" alt="Schema"></a>
-</p>
+Dense Video Annotator is a production-oriented system for generating and
+evaluating dense video captions. It connects video datasets to mature captioning
+recipes, normalizes their outputs, and measures caption quality through
+independent metrics. The current focus is caption production and evaluation;
+question answering and other semantic annotations are downstream extensions.
 
-A structured, multi-stage pipeline for **dense video annotation** with open-source vision-language models. Given raw videos, it produces four aligned annotation layers as schema-validated JSON: scene segmentation, dense scene descriptions, temporally bounded actions, and per-frame object bounding boxes. No task-specific training, no proprietary APIs.
+The architecture borrows the strongest engineering abstractions from
+[VLMEvalKit](https://github.com/open-compass/VLMEvalKit) and
+[lmms-eval](https://github.com/EvolvingLMMs-Lab/lmms-eval): explicit registries,
+a stable task protocol, dataset and recipe adapters, independent metrics,
+reproducible configuration, and standardized run artifacts. Annotation tasks are
+independent at the public boundary; an industrial recipe may have many internal
+stages.
 
-<p align="center">
-  <img src="assets/pipeline.png" width="90%" alt="Pipeline overview: preprocessing, scene segmentation and captioning, action annotation, and object identification, with the four aligned annotation layers each stage produces">
-</p>
+## Install
 
-## Annotation Layers
-
-| Layer | Method | Output |
-|---|---|---|
-| Scene segmentation | VLM for short videos, fixed-time chunks for long videos | `segments.json`, `validated.json` |
-| Dense captions | Per-scene VLM with rolling prefix context | `captions.json` |
-| Actions | Per-scene VLM, timestamps validated and offset in code | `actions.json` |
-| Objects | Per-frame VLM grounding with two-pass NMS | `detections.json` |
-
-The final deliverables merge these stages: `annotation.json` (scenes + captions + actions) and `objects.json` (detections).
-
-## Installation
-
-Requires Python 3.10+, `ffmpeg`/`ffprobe` on `PATH`, and a GPU host running vLLM.
+Python 3.10+ is required. Both uv and ordinary pip installations are supported:
 
 ```bash
-git clone https://github.com/savebees/dense-video-annotator.git
-cd dense-video-annotator
-pip install -r requirements.txt
+uv sync
+uv run dva components
+python -m pip install -e '.[dev]'
 ```
 
-## Quick Start
+The lockfile is checked in and CI exercises Python 3.10, 3.11, and 3.12.
 
-**1. Serve the VLM**
+## Dense-caption protocol
+
+Every recipe emits the same small, model-independent protocol:
+
+```json
+{"schema_version":"dense-caption/v0.1","video_id":"video_001","duration_ms":173000,"captions":[{"caption_id":"c_0001","start_ms":12400,"end_ms":26700,"text":"A woman places a red cup beside the laptop.","evidence_frames_ms":[]}]}
+```
+
+Intervals may overlap or leave gaps. Recipe/model provenance, quality flags, and
+execution metadata stay in run artifacts rather than polluting predictions.
+
+## Industrial production recipe
+
+The first production integration is `cosmos-curator`, an adapter around
+[NVIDIA Cosmos Curator](https://github.com/NVIDIA/cosmos-curator). Cosmos Curator
+performs the real batch pipeline—video discovery, shot splitting, transcoding,
+windowed VLM captioning, optional filters, caption-quality flags, and failure
+recovery. This system invokes its official configuration entry point once for
+the whole dataset and converts its per-clip metadata into
+`dense-caption/v0.1`. No Cosmos Curator source is copied here.
+
+A local JSONL manifest is the default dataset entrance:
+
+```json
+{"video_id":"video_001","video_path":"/data/videos/video_001.mp4","duration_ms":173000}
+```
+
+Run it from an official Cosmos Curator Pixi/container environment in which this
+package is also installed. Supply your own recipe configuration and dataset
+manifest:
 
 ```bash
-MODEL_DIR=/path/to/Qwen3.6-35B-A3B TP_SIZE=8 GPU_DEVICES=0,1,2,3,4,5,6,7 \
-  bash scripts/start_vllm.sh
+dva run videos.jsonl --recipe cosmos-curator \
+  --config /path/to/recipe.json --output-root runs
 ```
 
-The script serves the model on `:8000` with the OpenAI-compatible API. `TP_SIZE`, `DP_SIZE`, `GPU_MEM_UTIL`, and `GPU_DEVICES` are configurable via environment variables.
+The package supports Python 3.10+, while the audited Cosmos Curator environment
+is separate and currently uses its official Pixi/container stack (Python 3.13,
+vLLM 0.24, Torch 2.11, CUDA 13). An older local VLM environment is not assumed
+to be compatible.
 
-**2. Annotate**
+The large environment is installed only on demand:
 
 ```bash
-# single video, generic prompts
-python src/pipeline.py --video data/videos/example.mp4
-
-# a directory of videos with a dataset preset
-python src/pipeline.py --video_dir /path/to/videos --config configs/physics_iq.yaml
-
-# override the prompt set from the CLI
-python src/pipeline.py --video example.mp4 --dataset_type nwpu_campus
-
-# clear per-video caches and re-run from scratch
-python src/pipeline.py --video example.mp4 --force
+uv run dva env check cosmos-curator
+uv run dva env install cosmos-curator --path /data/envs/dense-video-cosmos
 ```
 
-**3. Inspect detections (optional)**
+Conda is not a prerequisite. The command downloads a fixed Pixi executable and
+the audited Cosmos Curator revision into the selected cache path, then creates
+the environment from the upstream `pixi.toml`. This keeps the normal package
+install small and avoids modifying shell profiles. Existing official Pixi or
+Conda-managed environments can still be used by setting
+`recipe_config.environment_path`, and teams that run Cosmos elsewhere can use
+`import` mode without installing the GPU stack locally.
 
-```bash
-python scripts/visualize_objects.py --video_id example        # one video
-python scripts/visualize_objects.py --all                     # every video in the output dir
-```
+Users who only validate datasets, evaluate imported outputs, or use another
+recipe do not need Pixi, CUDA, Torch, or vLLM installed by this project.
 
-Renders every bounding box onto its frame under `<output_dir>/<video_id>/viz/`.
+If Cosmos Curator is executed separately through a cluster, cloud job, or
+container, set `recipe_config.mode` to `import` and point `output_path` at its
+locally available output directory. Detailed configuration and extension
+boundaries are in [docs/recipes.md](docs/recipes.md).
 
-## Repository Structure
+## Strict structured grounding
 
-```
-dense-video-annotator/
-├── src/
-│   ├── pipeline.py              # entry point: orchestration, caching, schema validation
-│   ├── scene_segmentation.py    # segmentation, boundary validation, captioning
-│   ├── actions.py               # per-scene action annotation
-│   └── object_detection.py      # per-frame grounding + two-pass NMS
-├── prompts/                     # per-dataset prompt packages with generic fallback
-├── configs/                     # one self-contained YAML per dataset
-├── schemas/                     # JSON Schemas for both output documents
-├── preprocess/                  # metadata + frame extraction
-├── utils/                       # frame packing (time-base mux), VLM client, parsing
-├── scripts/
-│   ├── start_vllm.sh            # vLLM serving script
-│   └── visualize_objects.py     # render detections onto frames
-└── eval/                        # reference-free caption evaluation (see eval/EVAL.md)
-```
+For long videos where a processing chunk must not be mistaken for an event, the
+`structured-grounding` recipe executes fixed processing windows, five-dimensional
+VLM captions, adjacent-window event candidates, semantic clustering, coarse event
+windows, dense boundary review, event refinement, global consistency merging, and
+quality filtering. Every stage is an explicit adapter and every intermediate
+stage artifact is retained under `recipe_work/output/<video_id>/`, while one
+final JSONL record per successful video is written to a dataset-named file such
+as `recipe_work/final/VDC_5.jsonl` or `recipe_work/final/VDC_1k.jsonl`. Missing adapters, empty
+collections, malformed dimensions, and invalid intervals fail visibly; there is
+no fallback to chunk captions. The final record contains an `events` array, so a
+video with several events is represented by several objects linked by their
+unique `event_id`.
+The top-level `captions` object keeps the five VDC dimensions (`short`,
+`main_object`, `background`, `camera`, `detailed`); each event carries its
+temporal evidence and one event-level `caption`.
 
-## Output
-
-Each video produces a self-contained directory:
-
-```
-<output_dir>/<video_id>/
-├── metadata.json                # ffprobe metadata
-├── frames/                      # extracted jpgs (index = timestamp × fps)
-├── segments.json                # stage cache: raw segmentation
-├── validated.json               # stage cache: boundary-validated segments
-├── captions.json                # stage cache: segments + dense captions
-├── actions.json                 # stage cache: segments + captions + actions
-├── detections.json              # stage cache: raw per-frame detections
-├── annotation.json              # scenes + captions + actions
-└── objects.json                 # per-frame detections
-```
-
-## Configuration
-
-Each dataset (or type of video) gets its own YAML under `configs/`, selected with `--config`. `configs/default.yaml` covers generic videos. Frequently tuned keys:
-
-| Key | Default | Meaning |
-|---|---|---|
-| `dataset_type` | `default` | Selects the prompt package from `prompts/` |
-| `video_fps` | `1.0` | Frame extraction rate, also the detection density |
-| `frame_max_long_side` | `672` | Frame resize for VLM input |
-| `long_video_threshold_sec` | `120` | Beyond this, switch to fixed-chunk surveillance mode |
-| `min_description_words` | `100` | Caption length floor (with bounded retries) |
-| `min_action_duration` | `0.5` | Drop actions shorter than this |
-| `detection_nms_threshold` | `0.5` | Pass 1 NMS: same-label duplicate IoU |
-| `detection_cross_label_iou_threshold` | `0.9` | Pass 2 NMS: label-drift duplicate IoU |
-| `detection_concurrency` | `32` | Concurrent per-frame detection requests |
-
-## Annotating a New Dataset
-
-Two steps, e.g. for `my_dataset`:
-
-1. **Prompts**: add `prompts/my_dataset.py` and register it in `_MODULES` in `prompts/__init__.py`. Override only the prompt constants that need dataset-specific wording, everything else falls back to `prompts/general.py`.
-2. **Config**: copy `configs/default.yaml` to `configs/my_dataset.yaml`, set `dataset_type: my_dataset`, and tune the keys above.
-
-Then run:
-
-```bash
-python src/pipeline.py --video_dir /path/to/videos --config configs/my_dataset.yaml
-```
+The tested Vyce model pairing is `nemotron-vision` for visual stages and
+`gpt-5.6` for text reasoning stages. Use a recipe configuration containing this
+provider setup and provide `VYCE_API_KEY` in the process environment. The provider must be able
+to fetch every evidence image or supported video URL from `frame_url`,
+`frame_url_template`, `media_url`, or `media_url_template`; a local
+filesystem path and a base64 data URI are not silently treated as visual input.
 
 ## Evaluation
 
-The repository includes a self-contained, reference-free caption evaluation module under [`eval/`](eval/EVAL.md). In brief: a text LLM decomposes each caption into atomic claims, an independent visual judge (a different model family from every system under test) verdicts each claim against uniformly sampled frames, and a per-clip salient-item list drives coverage. The headline metric is **F1 over faithfulness (precision) and coverage (recall)**, complemented by richness statistics and a CLIP alignment score. See [`eval/EVAL.md`](eval/EVAL.md) for the full protocol, robustness handling, and run instructions.
+The built-in `temporal` metric reports mean temporal IoU, greedy proposal
+precision/recall/F1, and F1 at tIoU 0.3, 0.5, and 0.7. `lexical-caption` is a
+transparent token-overlap wiring baseline, not a semantic quality claim. `soda`
+is an optional external-command adapter, so the third-party implementation and
+license remain managed upstream. Multiple references are supported and each
+metric remains independent from the production recipe.
 
-## Citation
+The `activitynet-captions` adapter remains available for compatibility and metric
+development, but it is not the planned representative release test dataset. It
+can validate official ActivityNet Captions files without running production:
 
-If you find this project useful, please cite:
-
-```bibtex
-@misc{savebees2026densevideoannotator,
-  author       = {savebees},
-  title        = {Dense Video Annotator: A Structured Multi-Stage Pipeline for Dense Video Annotation},
-  year         = {2026},
-  howpublished = {\url{https://github.com/savebees/dense-video-annotator}}
-}
+```bash
+dva activitynet-validate val_1.json val_2.json --video-manifest videos.json
 ```
+
+## Standard artifacts
+
+Every run writes `predictions.jsonl`, `per_sample.jsonl`, `summary.json`,
+`summary.csv`, `failures.jsonl`, `run_manifest.json`, and
+`resolved_config.json`. The manifest records task and recipe versions, dataset
+fingerprint, configuration hash, seed, and Git state. Batch-level working files
+and upstream logs are retained in `recipe_work/` for diagnosis and resumption.
+
+The implementation is under [dense_video_annotator/](dense_video_annotator/).
+Recipe details and extension boundaries are documented in
+[docs/recipes.md](docs/recipes.md).
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+MIT. See [LICENSE](LICENSE). External recipes and metrics retain their own
+licenses and citation requirements.
