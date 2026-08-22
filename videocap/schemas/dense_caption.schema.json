@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://savebees.github.io/VideoCap/schemas/dense-caption-v0.1.json",
+  "title": "Temporal Dense Caption Prediction",
+  "description": "Caption intervals may overlap and may leave gaps.",
+  "type": "object",
+  "required": ["schema_version", "video_id", "duration_ms", "captions"],
+  "properties": {
+    "schema_version": {"const": "dense-caption/v0.1"},
+    "video_id": {"type": "string", "minLength": 1},
+    "duration_ms": {"type": "integer", "minimum": 1},
+    "captions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["caption_id", "start_ms", "end_ms", "text", "evidence_frames_ms"],
+        "properties": {
+          "caption_id": {"type": "string", "minLength": 1},
+          "start_ms": {"type": "integer", "minimum": 0},
+          "end_ms": {"type": "integer", "minimum": 1},
+          "text": {"type": "string", "minLength": 1},
+          "evidence_frames_ms": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 0},
+            "uniqueItems": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

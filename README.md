@@ -1,142 +1,96 @@
-# Dense Video Annotator
+# VideoCap
 
-Dense Video Annotator is a production-oriented system for generating and
-evaluating dense video captions. It connects video datasets to mature captioning
-recipes, normalizes their outputs, and measures caption quality through
-independent metrics. The current focus is caption production and evaluation;
-question answering and other semantic annotations are downstream extensions.
+VideoCap is a production-oriented video understanding flow for creating
+global multi-dimensional captions,
+temporal event annotations, and future caption-grounded QA labels. The same
+outputs can support dataset production, model training, and caption quality
+evaluation.
+
+VideoCap is the production flow in this repository. It uses a fixed
+window graph rather than a selectable recipe layer:
+
+```text
+video
+  -> 24s processing windows with 2s overlap and 8 evidence frames
+  -> one VLM request for the five caption dimensions
+  -> adjacent-window event candidates
+  -> semantic clustering
+  -> coarse event windows
+  -> boundary review and split/merge
+  -> event caption refinement
+  -> global caption merge
+  -> quality filtering
+  -> intermediate artifacts + final dataset-named JSONL
+```
+
+VideoCap is the caption-production member of a planned video data stack:
+`VideoEval` will cover caption and event quality evaluation, while `VideoQA`
+will derive question-answer and task labels from the generated annotations.
 
 ## Install
 
-Python 3.10+ is required. Both uv and ordinary pip installations are supported:
+Python 3.10 or newer is supported. The core install remains small; model
+providers and their credentials are configured only when a run needs them.
 
 ```bash
-uv sync
-uv run dva components
-python -m pip install -e '.[dev]'
+pip install -e .
 ```
 
-The lockfile is checked in and CI exercises Python 3.10, 3.11, and 3.12.
+## Run VideoCap
 
-## Dense-caption protocol
-
-Every recipe emits the same small, model-independent protocol:
-
-```json
-{"schema_version":"dense-caption/v0.1","video_id":"video_001","duration_ms":173000,"captions":[{"caption_id":"c_0001","start_ms":12400,"end_ms":26700,"text":"A woman places a red cup beside the laptop.","evidence_frames_ms":[]}]}
-```
-
-Intervals may overlap or leave gaps. Recipe/model provenance, quality flags, and
-execution metadata stay in run artifacts rather than polluting predictions.
-
-## Industrial production recipe
-
-The first production integration is `cosmos-curator`, an adapter around
-[NVIDIA Cosmos Curator](https://github.com/NVIDIA/cosmos-curator). Cosmos Curator
-performs the real batch pipeline—video discovery, shot splitting, transcoding,
-windowed VLM captioning, optional filters, caption-quality flags, and failure
-recovery. This system invokes its official configuration entry point once for
-the whole dataset and converts its per-clip metadata into
-`dense-caption/v0.1`. No Cosmos Curator source is copied here.
-
-A local JSONL manifest is the default dataset entrance:
-
-```json
-{"video_id":"video_001","video_path":"/data/videos/video_001.mp4","duration_ms":173000}
-```
-
-Run it from an official Cosmos Curator Pixi/container environment in which this
-package is also installed. Supply your own recipe configuration and dataset
-manifest:
+Use the SiliconFlow example as a starting point. Set the API key in the shell,
+then run a local JSONL video manifest:
 
 ```bash
-dva run videos.jsonl --recipe cosmos-curator \
-  --config /path/to/recipe.json --output-root runs
+export SILICONFLOW_API_KEY="..."
+videocap run videos.jsonl \
+  --config configs/videocap/siliconflow.json \
+  --output-root runs
 ```
 
-The package supports Python 3.10+, while the audited Cosmos Curator environment
-is separate and currently uses its official Pixi/container stack (Python 3.13,
-vLLM 0.24, Torch 2.11, CUDA 13). An older local VLM environment is not assumed
-to be compatible.
+The example uses `Qwen/Qwen3.6-35B-A3B`, 24-second windows, 2 seconds of
+overlap, 8 evidence frames, and 460-pixel frame height. The key is read from
+the environment and is not written to run configuration files.
 
-The large environment is installed only on demand:
+The final output is written under `pipeline_work/final/` using the configured
+dataset name, for example `VDC_5.jsonl`. Intermediate JSONL and JSON artifacts
+are retained under `pipeline_work/output/<video_id>/` so every stage can be
+audited.
 
-```bash
-uv run dva env check cosmos-curator
-uv run dva env install cosmos-curator --path /data/envs/dense-video-cosmos
-```
+## Output Shape
 
-Conda is not a prerequisite. The command downloads a fixed Pixi executable and
-the audited Cosmos Curator revision into the selected cache path, then creates
-the environment from the upstream `pixi.toml`. This keeps the normal package
-install small and avoids modifying shell profiles. Existing official Pixi or
-Conda-managed environments can still be used by setting
-`recipe_config.environment_path`, and teams that run Cosmos elsewhere can use
-`import` mode without installing the GPU stack locally.
+Each final record represents one video. The top-level `captions` object contains
+the five VDC dimensions: `short`, `main_object`, `background`, `camera`, and
+`detailed`. The `events` array contains one object per accepted event, with its
+`event_id`, `cluster_id`, `start_ms`, `end_ms`, `evidence_frames_ms`, and event
+caption. A video can contain multiple events.
 
-Users who only validate datasets, evaluate imported outputs, or use another
-recipe do not need Pixi, CUDA, Torch, or vLLM installed by this project.
-
-If Cosmos Curator is executed separately through a cluster, cloud job, or
-container, set `recipe_config.mode` to `import` and point `output_path` at its
-locally available output directory. Detailed configuration and extension
-boundaries are in [docs/recipes.md](docs/recipes.md).
-
-## Strict structured grounding
-
-For long videos where a processing chunk must not be mistaken for an event, the
-`structured-grounding` recipe executes fixed processing windows, five-dimensional
-VLM captions, adjacent-window event candidates, semantic clustering, coarse event
-windows, dense boundary review, event refinement, global consistency merging, and
-quality filtering. Every stage is an explicit adapter and every intermediate
-stage artifact is retained under `recipe_work/output/<video_id>/`, while one
-final JSONL record per successful video is written to a dataset-named file such
-as `recipe_work/final/VDC_5.jsonl` or `recipe_work/final/VDC_1k.jsonl`. Missing adapters, empty
-collections, malformed dimensions, and invalid intervals fail visibly; there is
-no fallback to chunk captions. The final record contains an `events` array, so a
-video with several events is represented by several objects linked by their
-unique `event_id`.
-The top-level `captions` object keeps the five VDC dimensions (`short`,
-`main_object`, `background`, `camera`, `detailed`); each event carries its
-temporal evidence and one event-level `caption`.
-
-The tested Vyce model pairing is `nemotron-vision` for visual stages and
-`gpt-5.6` for text reasoning stages. Use a recipe configuration containing this
-provider setup and provide `VYCE_API_KEY` in the process environment. The provider must be able
-to fetch every evidence image or supported video URL from `frame_url`,
-`frame_url_template`, `media_url`, or `media_url_template`; a local
-filesystem path and a base64 data URI are not silently treated as visual input.
+The window prompt implementation is in
+`videocap/prompts/window_caption.py`. Its prompt pools are
+inspired by AuroraCap's VDC benchmark:
+https://github.com/wenhaochai/aurora. All five questions are sent in one VLM
+request in the fixed order `short`, `main_object`, `background`, `camera`,
+`detailed`, so evidence frames are not retransmitted five times.
 
 ## Evaluation
 
-The built-in `temporal` metric reports mean temporal IoU, greedy proposal
-precision/recall/F1, and F1 at tIoU 0.3, 0.5, and 0.7. `lexical-caption` is a
-transparent token-overlap wiring baseline, not a semantic quality claim. `soda`
-is an optional external-command adapter, so the third-party implementation and
-license remain managed upstream. Multiple references are supported and each
-metric remains independent from the production recipe.
-
-The `activitynet-captions` adapter remains available for compatibility and metric
-development, but it is not the planned representative release test dataset. It
-can validate official ActivityNet Captions files without running production:
+The built-in metrics are independent of VideoCap production. `temporal`
+reports temporal IoU and proposal precision/recall/F1; `lexical-caption` is a
+transparent token-overlap baseline; `soda` is an optional external-command
+adapter. The `activitynet-captions` dataset adapter remains available for
+metric development and validation.
 
 ```bash
-dva activitynet-validate val_1.json val_2.json --video-manifest videos.json
+videocap components
 ```
 
-## Standard artifacts
+## Development
 
-Every run writes `predictions.jsonl`, `per_sample.jsonl`, `summary.json`,
-`summary.csv`, `failures.jsonl`, `run_manifest.json`, and
-`resolved_config.json`. The manifest records task and recipe versions, dataset
-fingerprint, configuration hash, seed, and Git state. Batch-level working files
-and upstream logs are retained in `recipe_work/` for diagnosis and resumption.
+```bash
+uv run pytest
+```
 
-The implementation is under [dense_video_annotator/](dense_video_annotator/).
-Recipe details and extension boundaries are documented in
-[docs/recipes.md](docs/recipes.md).
-
-## License
-
-MIT. See [LICENSE](LICENSE). External recipes and metrics retain their own
-licenses and citation requirements.
+The project keeps the public protocol and schemas small, while retaining every
+model stage behind explicit adapter boundaries. Provider-specific credentials,
+video caches, run outputs, and temporary files are excluded from the public
+source tree.

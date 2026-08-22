@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "dense-video-annotator"
+name = "videocap"
 version = "0.1.0"
 description = "Production-oriented dense video captioning and quality evaluation"
 readme = "README.md"
@@ -25,13 +25,13 @@ dev = ["pytest>=7.0"]
 default-groups = ["dev"]
 
 [project.scripts]
-dva = "dense_video_annotator.cli:main"
+videocap = "videocap.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["dense_video_annotator*"]
+include = ["videocap*"]
 
 [tool.setuptools.package-data]
-"dense_video_annotator.schemas" = ["*.json"]
+"videocap.schemas" = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
