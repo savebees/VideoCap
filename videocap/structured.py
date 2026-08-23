@@ -1,40 +1,59 @@
-"""Strict intermediate contracts for the VideoCap grounding flow.
-
-The public dense-caption protocol is intentionally small.  This module keeps the
-production graph explicit so processing windows are never confused with semantic
-event windows and every model stage can be inspected independently.
-"""
+"""Data structures shared by the VideoCap stages."""
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Mapping, Protocol, Sequence
-
+from pathlib import Path
+from typing import Any
 
 DIMENSIONS = ("short", "main_object", "background", "camera", "detailed")
 
 
-def _text(value: Any, field_name: str) -> str:
-    if not isinstance(value, str) or not value.strip():
-        raise ValueError(f"{field_name} must be a non-empty string")
-    return value.strip()
-
-
-def _timestamp(value: Any, field_name: str, duration_ms: int) -> int:
-    if isinstance(value, bool) or not isinstance(value, int):
-        raise ValueError(f"{field_name} must be an integer")
-    if value < 0 or value > duration_ms:
-        raise ValueError(f"{field_name} must be within [0, {duration_ms}]")
+def _non_empty(value: str, name: str) -> str:
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    value = value.strip()
+    if not value:
+        raise ValueError(f"{name} must be non-empty")
     return value
 
 
-def _evidence(values: Sequence[int], start_ms: int, end_ms: int) -> tuple[int, ...]:
-    result = tuple(values)
-    if tuple(sorted(set(result))) != result:
-        raise ValueError("evidence_frames_ms must be sorted and unique")
-    if any(timestamp < start_ms or timestamp > end_ms for timestamp in result):
-        raise ValueError("evidence frame is outside its interval")
-    return result
+def _ordered_timestamps(
+    values: Sequence[int],
+    *,
+    start_ms: int | None = None,
+    end_ms: int | None = None,
+) -> tuple[int, ...]:
+    timestamps = tuple(values)
+    if any(
+        isinstance(timestamp, bool) or not isinstance(timestamp, int) for timestamp in timestamps
+    ):
+        raise ValueError("timestamps must be integers")
+    if tuple(sorted(set(timestamps))) != timestamps:
+        raise ValueError("timestamps must be sorted and unique")
+    if start_ms is not None and any(timestamp < start_ms for timestamp in timestamps):
+        raise ValueError("timestamp is outside its interval")
+    if end_ms is not None and any(timestamp > end_ms for timestamp in timestamps):
+        raise ValueError("timestamp is outside its interval")
+    return timestamps
+
+
+@dataclass(frozen=True)
+class VideoSample:
+    video_id: str
+    video_path: Path
+    duration_ms: int
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "video_id", _non_empty(self.video_id, "video_id"))
+        if Path(self.video_id).name != self.video_id or self.video_id in {".", ".."}:
+            raise ValueError("video_id must be safe to use as a directory name")
+        if isinstance(self.duration_ms, bool) or not isinstance(self.duration_ms, int):
+            raise ValueError("duration_ms must be an integer")
+        if self.duration_ms <= 0:
+            raise ValueError("duration_ms must be positive")
 
 
 @dataclass(frozen=True)
@@ -45,13 +64,28 @@ class ProcessingWindow:
     evidence_frames_ms: tuple[int, ...]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "window_id", _text(self.window_id, "window_id"))
         if self.end_ms <= self.start_ms:
-            raise ValueError("processing window end_ms must be greater than start_ms")
-        object.__setattr__(self, "evidence_frames_ms", _evidence(self.evidence_frames_ms, self.start_ms, self.end_ms))
+            raise ValueError("processing window must have positive duration")
+        object.__setattr__(self, "window_id", _non_empty(self.window_id, "window_id"))
+        object.__setattr__(
+            self,
+            "evidence_frames_ms",
+            _ordered_timestamps(
+                self.evidence_frames_ms,
+                start_ms=self.start_ms,
+                end_ms=self.end_ms,
+            ),
+        )
+        if not self.evidence_frames_ms:
+            raise ValueError("processing window must contain evidence frames")
 
     def to_dict(self) -> dict[str, Any]:
-        return {"window_id": self.window_id, "start_ms": self.start_ms, "end_ms": self.end_ms, "evidence_frames_ms": list(self.evidence_frames_ms)}
+        return {
+            "window_id": self.window_id,
+            "start_ms": self.start_ms,
+            "end_ms": self.end_ms,
+            "evidence_frames_ms": list(self.evidence_frames_ms),
+        }
 
 
 @dataclass(frozen=True)
@@ -61,135 +95,131 @@ class WindowCaption:
     evidence_frames_ms: tuple[int, ...]
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "window_id", _text(self.window_id, "window_id"))
-        if set(self.captions) != set(DIMENSIONS):
-            raise ValueError(f"window caption dimensions must be exactly {DIMENSIONS}")
-        normalized = {key: _text(self.captions[key], f"captions.{key}") for key in DIMENSIONS}
-        object.__setattr__(self, "captions", normalized)
-        evidence = tuple(self.evidence_frames_ms)
-        for timestamp in evidence:
-            if isinstance(timestamp, bool) or not isinstance(timestamp, int) or timestamp < 0:
-                raise ValueError("window caption evidence_frames_ms must contain non-negative integers")
-        if tuple(sorted(set(evidence))) != evidence:
-            raise ValueError("window caption evidence_frames_ms must be sorted and unique")
-        object.__setattr__(self, "evidence_frames_ms", evidence)
+        object.__setattr__(self, "window_id", _non_empty(self.window_id, "window_id"))
+        if tuple(self.captions) != DIMENSIONS:
+            raise ValueError(f"captions must contain {DIMENSIONS} in order")
+        object.__setattr__(
+            self,
+            "captions",
+            {name: _non_empty(self.captions[name], name) for name in DIMENSIONS},
+        )
+        object.__setattr__(
+            self,
+            "evidence_frames_ms",
+            _ordered_timestamps(self.evidence_frames_ms, start_ms=0),
+        )
+        if not self.evidence_frames_ms:
+            raise ValueError("window caption must retain its evidence frames")
 
     def to_dict(self) -> dict[str, Any]:
-        return {"window_id": self.window_id, "captions": dict(self.captions), "evidence_frames_ms": list(self.evidence_frames_ms)}
+        return {
+            "window_id": self.window_id,
+            "captions": dict(self.captions),
+            "evidence_frames_ms": list(self.evidence_frames_ms),
+        }
 
 
 @dataclass(frozen=True)
-class EventCandidate:
-    candidate_id: str
+class EventProposal:
+    event_id: str
     source_window_ids: tuple[str, ...]
-    description: str
+    short_caption: str
+    start_ms: int
+    end_ms: int
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "candidate_id", _text(self.candidate_id, "candidate_id"))
         if not self.source_window_ids:
-            raise ValueError("event candidate must reference at least one processing window")
-        object.__setattr__(self, "source_window_ids", tuple(_text(item, "source_window_id") for item in self.source_window_ids))
-        object.__setattr__(self, "description", _text(self.description, "description"))
+            raise ValueError("event proposal must reference a processing window")
+        if self.end_ms <= self.start_ms:
+            raise ValueError("event proposal must have positive duration")
+        object.__setattr__(self, "event_id", _non_empty(self.event_id, "event_id"))
+        source_window_ids = tuple(
+            _non_empty(window_id, "source_window_id") for window_id in self.source_window_ids
+        )
+        if len(set(source_window_ids)) != len(source_window_ids):
+            raise ValueError("event proposal must not repeat a processing window")
+        object.__setattr__(self, "source_window_ids", source_window_ids)
+        object.__setattr__(self, "short_caption", _non_empty(self.short_caption, "short_caption"))
 
     def to_dict(self) -> dict[str, Any]:
-        return {"candidate_id": self.candidate_id, "source_window_ids": list(self.source_window_ids), "description": self.description}
-
-
-@dataclass(frozen=True)
-class EventCluster:
-    cluster_id: str
-    candidate_ids: tuple[str, ...]
-
-    def __post_init__(self) -> None:
-        object.__setattr__(self, "cluster_id", _text(self.cluster_id, "cluster_id"))
-        if not self.candidate_ids:
-            raise ValueError("event cluster must contain at least one candidate")
-        object.__setattr__(self, "candidate_ids", tuple(_text(item, "candidate_id") for item in self.candidate_ids))
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"cluster_id": self.cluster_id, "candidate_ids": list(self.candidate_ids)}
+        return {
+            "event_id": self.event_id,
+            "source_window_ids": list(self.source_window_ids),
+            "short_caption": self.short_caption,
+            "start_ms": self.start_ms,
+            "end_ms": self.end_ms,
+        }
 
 
 @dataclass(frozen=True)
 class EventWindow:
     event_id: str
-    cluster_id: str
     start_ms: int
     end_ms: int
-    evidence_frames_ms: tuple[int, ...] = field(default_factory=tuple)
+    evidence_frames_ms: tuple[int, ...]
 
-    def validate(self, duration_ms: int) -> None:
-        object.__setattr__(self, "event_id", _text(self.event_id, "event_id"))
-        object.__setattr__(self, "cluster_id", _text(self.cluster_id, "cluster_id"))
-        object.__setattr__(self, "start_ms", _timestamp(self.start_ms, "start_ms", duration_ms))
-        object.__setattr__(self, "end_ms", _timestamp(self.end_ms, "end_ms", duration_ms))
+    def __post_init__(self) -> None:
         if self.end_ms <= self.start_ms:
-            raise ValueError("event window end_ms must be greater than start_ms")
-        object.__setattr__(self, "evidence_frames_ms", _evidence(self.evidence_frames_ms, self.start_ms, self.end_ms))
+            raise ValueError("event window must have positive duration")
+        object.__setattr__(self, "event_id", _non_empty(self.event_id, "event_id"))
+        object.__setattr__(
+            self,
+            "evidence_frames_ms",
+            _ordered_timestamps(
+                self.evidence_frames_ms,
+                start_ms=self.start_ms,
+                end_ms=self.end_ms,
+            ),
+        )
+        if self.evidence_frames_ms != (self.start_ms, self.end_ms):
+            raise ValueError("event evidence must contain its exact start and end")
 
     def to_dict(self) -> dict[str, Any]:
-        return {"event_id": self.event_id, "cluster_id": self.cluster_id, "start_ms": self.start_ms, "end_ms": self.end_ms, "evidence_frames_ms": list(self.evidence_frames_ms)}
+        return {
+            "event_id": self.event_id,
+            "start_ms": self.start_ms,
+            "end_ms": self.end_ms,
+            "evidence_frames_ms": list(self.evidence_frames_ms),
+        }
 
 
 @dataclass(frozen=True)
 class EventCaption:
     event: EventWindow
-    captions: Mapping[str, str]
+    caption: str
+    caption_frames_ms: tuple[int, ...]
 
     def __post_init__(self) -> None:
-        if set(self.captions) != set(DIMENSIONS):
-            raise ValueError(f"event caption dimensions must be exactly {DIMENSIONS}")
-        object.__setattr__(self, "captions", {key: _text(self.captions[key], f"captions.{key}") for key in DIMENSIONS})
+        object.__setattr__(self, "caption", _non_empty(self.caption, "caption"))
+        object.__setattr__(
+            self,
+            "caption_frames_ms",
+            _ordered_timestamps(
+                self.caption_frames_ms,
+                start_ms=self.event.start_ms,
+                end_ms=self.event.end_ms,
+            ),
+        )
+        if not self.caption_frames_ms or (
+            self.caption_frames_ms[0] != self.event.start_ms
+            or self.caption_frames_ms[-1] != self.event.end_ms
+        ):
+            raise ValueError("event caption frames must include its exact start and end")
 
     def to_dict(self) -> dict[str, Any]:
-        return {**self.event.to_dict(), "captions": dict(self.captions)}
+        return {
+            **self.event.to_dict(),
+            "caption": self.caption,
+            "caption_frames_ms": list(self.caption_frames_ms),
+        }
 
 
-class WindowCaptioner(Protocol):
-    def __call__(self, sample: Any, window: ProcessingWindow) -> Mapping[str, Any]: ...
-
-
-class CandidateGenerator(Protocol):
-    def __call__(self, sample: Any, windows: Sequence[ProcessingWindow], captions: Sequence[WindowCaption]) -> Sequence[Mapping[str, Any]]: ...
-
-
-class Clusterer(Protocol):
-    def __call__(self, sample: Any, candidates: Sequence[EventCandidate]) -> Sequence[Mapping[str, Any]]: ...
-
-
-class EventWindowProposer(Protocol):
-    def __call__(self, sample: Any, cluster: EventCluster, candidates: Sequence[EventCandidate], windows: Sequence[ProcessingWindow]) -> Mapping[str, Any]: ...
-
-
-class BoundaryReviewer(Protocol):
-    def __call__(self, sample: Any, event: EventWindow) -> Mapping[str, Any]: ...
-
-
-class EventCaptionRefiner(Protocol):
-    def __call__(self, sample: Any, event: EventWindow, windows: Sequence[WindowCaption]) -> Mapping[str, Any]: ...
-
-
-class GlobalCaptionMerger(Protocol):
-    def __call__(self, sample: Any, events: Sequence[EventCaption]) -> Mapping[str, str]: ...
-
-
-class QualityFilter(Protocol):
-    def __call__(self, sample: Any, events: Sequence[EventCaption], global_captions: Mapping[str, str]) -> Mapping[str, Any]: ...
-
-
-@dataclass(frozen=True)
-class StructuredAdapterBundle:
-    caption_window: WindowCaptioner | None = None
-    generate_event_candidates: CandidateGenerator | None = None
-    cluster_event_candidates: Clusterer | None = None
-    propose_event_window: EventWindowProposer | None = None
-    review_event_boundary: BoundaryReviewer | None = None
-    refine_event_caption: EventCaptionRefiner | None = None
-    merge_global_caption: GlobalCaptionMerger | None = None
-    quality_filter: QualityFilter | None = None
-
-    def require(self, name: str) -> Any:
-        adapter = getattr(self, name)
-        if not callable(adapter):
-            raise RuntimeError(f"videocap stage '{name}' has no adapter")
-        return adapter
+__all__ = [
+    "DIMENSIONS",
+    "EventCaption",
+    "EventProposal",
+    "EventWindow",
+    "ProcessingWindow",
+    "VideoSample",
+    "WindowCaption",
+]

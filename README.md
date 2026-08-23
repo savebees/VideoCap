@@ -1,96 +1,160 @@
 # VideoCap
 
-VideoCap is a production-oriented video understanding flow for creating
-global multi-dimensional captions,
-temporal event annotations, and future caption-grounded QA labels. The same
-outputs can support dataset production, model training, and caption quality
-evaluation.
+[简体中文](README.zh-CN.md)
 
-VideoCap is the production flow in this repository. It uses a fixed
-window graph rather than a selectable recipe layer:
+VideoCap turns local videos into two complementary annotation layers: a five-dimensional caption for the complete video and temporally grounded captions for coherent events. It keeps the production graph fixed and inspectable, so processing windows, model evidence, event boundaries, and final annotations remain easy to audit.
+
+## Pipeline
 
 ```text
-video
-  -> 24s processing windows with 2s overlap and 8 evidence frames
-  -> one VLM request for the five caption dimensions
-  -> adjacent-window event candidates
-  -> semantic clustering
-  -> coarse event windows
-  -> boundary review and split/merge
-  -> event caption refinement
-  -> global caption merge
-  -> quality filtering
-  -> intermediate artifacts + final dataset-named JSONL
+video manifest
+  -> overlapping processing windows
+  -> VLM: five-dimensional caption for each window
+  -> LLM: event proposals from short + main_object captions
+  -> VLM: coarse and fine event-boundary review
+  -> VLM: caption each grounded event
+  -> LLM: merge events and window evidence into global captions
+  -> final JSONL + stage artifacts
 ```
 
-VideoCap is the caption-production member of a planned video data stack:
-`VideoEval` will cover caption and event quality evaluation, while `VideoQA`
-will derive question-answer and task labels from the generated annotations.
+Processing windows are model-input units, not annotation boundaries. One LLM call groups consecutive windows into semantic events; a VLM then selects visually supported timestamps and captions only the accepted interval. The global merge uses grounded events as its chronological backbone and window captions for subject, setting, camera, and fine-detail evidence.
 
-## Install
+## Requirements
 
-Python 3.10 or newer is supported. The core install remains small; model
-providers and their credentials are configured only when a run needs them.
+- Python 3.10 or newer
+- `ffmpeg` available on `PATH`
+- an OpenAI-compatible Chat Completions endpoint that accepts `image_url` data URIs
+
+Install the project with `uv`:
 
 ```bash
-pip install -e .
+git clone https://github.com/savebees/VideoCap.git
+cd VideoCap
+uv sync --locked
 ```
 
-## Run VideoCap
+Standard editable installation also works:
 
-Use the SiliconFlow example as a starting point. Set the API key in the shell,
-then run a local JSONL video manifest:
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
+## Configuration
+
+All runtime settings live in one file: [`configs/videocap.json`](configs/videocap.json). The VLM and LLM sections use the same small OpenAI-compatible contract but may point to different providers or models.
+
+```json
+{
+  "pipeline": {
+    "window_ms": 24000,
+    "overlap_ms": 2000,
+    "evidence_frames": 8,
+    "output_name": "annotations.jsonl"
+  },
+  "vlm": {
+    "base_url": "https://api.siliconflow.cn/v1",
+    "api_key_env": "SILICONFLOW_API_KEY",
+    "model": "Qwen/Qwen3.6-35B-A3B",
+    "frame_height": 460,
+    "timeout_sec": 120,
+    "max_retries": 2,
+    "extra_body": {"enable_thinking": false}
+  },
+  "llm": {
+    "base_url": "https://api.siliconflow.cn/v1",
+    "api_key_env": "SILICONFLOW_API_KEY",
+    "model": "Qwen/Qwen3.6-35B-A3B",
+    "timeout_sec": 120,
+    "max_retries": 2,
+    "extra_body": {"enable_thinking": false}
+  }
+}
+```
+
+API keys are read only from the named environment variables. The resolved run configuration therefore contains endpoint and model provenance without storing credentials.
+
+## Video Manifest
+
+The input is UTF-8 JSONL with one video per line:
+
+```json
+{"video_id":"video_001","video_path":"videos/video_001.mp4","duration_ms":68320}
+{"video_id":"video_002","video_path":"videos/video_002.mp4","duration_ms":124500,"metadata":{"split":"demo"}}
+```
+
+Relative video paths are resolved from the manifest directory. Video IDs must be unique, files must exist, and durations are expressed in milliseconds.
+
+## Run
 
 ```bash
 export SILICONFLOW_API_KEY="..."
-videocap run videos.jsonl \
-  --config configs/videocap/siliconflow.json \
+uv run videocap run videos.jsonl \
+  --config configs/videocap.json \
   --output-root runs
 ```
 
-The example uses `Qwen/Qwen3.6-35B-A3B`, 24-second windows, 2 seconds of
-overlap, 8 evidence frames, and 460-pixel frame height. The key is read from
-the environment and is not written to run configuration files.
+Each execution creates a new immutable run directory:
 
-The final output is written under `pipeline_work/final/` using the configured
-dataset name, for example `VDC_5.jsonl`. Intermediate JSONL and JSON artifacts
-are retained under `pipeline_work/output/<video_id>/` so every stage can be
-audited.
-
-## Output Shape
-
-Each final record represents one video. The top-level `captions` object contains
-the five VDC dimensions: `short`, `main_object`, `background`, `camera`, and
-`detailed`. The `events` array contains one object per accepted event, with its
-`event_id`, `cluster_id`, `start_ms`, `end_ms`, `evidence_frames_ms`, and event
-caption. A video can contain multiple events.
-
-The window prompt implementation is in
-`videocap/prompts/window_caption.py`. Its prompt pools are
-inspired by AuroraCap's VDC benchmark:
-https://github.com/wenhaochai/aurora. All five questions are sent in one VLM
-request in the fixed order `short`, `main_object`, `background`, `camera`,
-`detailed`, so evidence frames are not retransmitted five times.
-
-## Evaluation
-
-The built-in metrics are independent of VideoCap production. `temporal`
-reports temporal IoU and proposal precision/recall/F1; `lexical-caption` is a
-transparent token-overlap baseline; `soda` is an optional external-command
-adapter. The `activitynet-captions` dataset adapter remains available for
-metric development and validation.
-
-```bash
-videocap components
+```text
+runs/<run_id>/
+├── annotations.jsonl
+├── config.json
+├── failures.jsonl
+├── manifest.json
+├── summary.json
+└── stages/<video_id>/
+    ├── processing_windows.jsonl
+    ├── window_captions.jsonl
+    ├── event_proposals.jsonl
+    ├── event_boundaries.jsonl
+    ├── event_captions.jsonl
+    ├── global_caption.json
+    └── failure.json              # only when this video fails
 ```
+
+The run manifest records the dataset and configuration hashes, VideoCap version, Git state, and creation time. A failed video is recorded explicitly and does not erase successful records from the same run.
+
+## Output
+
+```json
+{
+  "schema_version": "videocap/v0.2",
+  "video_id": "video_001",
+  "duration_ms": 68320,
+  "captions": {
+    "short": "A man prepares and serves a cooked dish.",
+    "main_object": "A man prepares ingredients, cooks them, and carries the finished plate.",
+    "background": "The activity takes place in a kitchen and adjoining dining area.",
+    "camera": "Mostly static medium shots follow the activity from the counter to the table.",
+    "detailed": "A man prepares ingredients, cooks them, plates the food, and carries it to a table."
+  },
+  "events": [
+    {
+      "event_id": "event_0000",
+      "start_ms": 1750,
+      "end_ms": 51250,
+      "evidence_frames_ms": [1750, 51250],
+      "caption": "A man prepares ingredients, cooks them, and plates the finished food."
+    }
+  ]
+}
+```
+
+The public schema is packaged at [`videocap/schemas/videocap.schema.json`](videocap/schemas/videocap.schema.json). Prompt templates are kept separate from model adapters under [`videocap/prompts`](videocap/prompts), while provider-independent VLM and LLM implementations live in [`videocap/adapters`](videocap/adapters). The five caption dimensions follow the public VDC prompt taxonomy from [AuroraCap](https://github.com/wenhaochai/aurora).
 
 ## Development
 
 ```bash
+uv sync --locked
+uv run ruff check .
 uv run pytest
+uv build
 ```
 
-The project keeps the public protocol and schemas small, while retaining every
-model stage behind explicit adapter boundaries. Provider-specific credentials,
-video caches, run outputs, and temporary files are excluded from the public
-source tree.
+See [`TODO.md`](TODO.md) for work that is deliberately outside the current release.
+
+## License
+
+VideoCap is released under the [MIT License](LICENSE).

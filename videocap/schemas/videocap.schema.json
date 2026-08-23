@@ -1,11 +1,17 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://savebees.github.io/VideoCap/schemas/videocap-v0.1.json",
+  "$id": "https://savebees.github.io/VideoCap/schemas/videocap-v0.2.json",
   "title": "VideoCap Final Record",
   "type": "object",
-  "required": ["schema_version", "video_id", "duration_ms", "captions", "events", "quality"],
+  "required": [
+    "schema_version",
+    "video_id",
+    "duration_ms",
+    "captions",
+    "events"
+  ],
   "properties": {
-    "schema_version": {"const": "videocap/v0.1"},
+    "schema_version": {"const": "videocap/v0.2"},
     "video_id": {"type": "string", "minLength": 1},
     "duration_ms": {"type": "integer", "minimum": 1},
     "captions": {
@@ -25,19 +31,29 @@
       "minItems": 1,
       "items": {
         "type": "object",
-        "required": ["event_id", "cluster_id", "start_ms", "end_ms", "evidence_frames_ms", "caption"],
+        "required": [
+          "event_id",
+          "start_ms",
+          "end_ms",
+          "evidence_frames_ms",
+          "caption"
+        ],
         "properties": {
           "event_id": {"type": "string", "minLength": 1},
-          "cluster_id": {"type": "string", "minLength": 1},
           "start_ms": {"type": "integer", "minimum": 0},
           "end_ms": {"type": "integer", "minimum": 1},
-          "evidence_frames_ms": {"type": "array", "items": {"type": "integer", "minimum": 0}, "uniqueItems": true},
+          "evidence_frames_ms": {
+            "type": "array",
+            "items": {"type": "integer", "minimum": 0},
+            "minItems": 2,
+            "maxItems": 2,
+            "uniqueItems": true
+          },
           "caption": {"type": "string", "minLength": 1}
         },
         "additionalProperties": false
       }
-    },
-    "quality": {"type": "object"}
+    }
   },
   "additionalProperties": false
 }

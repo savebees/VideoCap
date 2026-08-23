@@ -1,33 +1,22 @@
-"""JSON Schema validation for serialized public artifacts."""
+"""JSON Schema validation for final VideoCap records."""
 
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from importlib.resources import files
-from typing import Any, Mapping
+from typing import Any
 
 import jsonschema
 
 
-_SCHEMAS = {
-    "dense_caption": "dense_caption.schema.json",
-    "run_manifest": "run_manifest.schema.json",
-    "videocap": "videocap.schema.json",
-}
-
-
-def load_schema(name: str) -> dict[str, Any]:
-    try:
-        filename = _SCHEMAS[name]
-    except KeyError as exc:
-        raise ValueError(f"unknown schema {name!r}; available: {sorted(_SCHEMAS)}") from exc
-    resource = files("videocap.schemas").joinpath(filename)
+def load_schema() -> dict[str, Any]:
+    resource = files("videocap.schemas").joinpath("videocap.schema.json")
     return json.loads(resource.read_text(encoding="utf-8"))
 
 
-def validate_document(document: Mapping[str, Any], schema_name: str) -> None:
-    validator = jsonschema.Draft202012Validator(
-        load_schema(schema_name),
-        format_checker=jsonschema.FormatChecker(),
-    )
-    validator.validate(dict(document))
+def validate_record(document: Mapping[str, Any]) -> None:
+    jsonschema.Draft202012Validator(load_schema()).validate(dict(document))
+
+
+__all__ = ["load_schema", "validate_record"]

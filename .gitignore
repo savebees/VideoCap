@@ -4,12 +4,9 @@ __pycache__/
 *.egg-info/
 .venv/
 .pytest_cache/
+.ruff_cache/
+build/
 dist/
-
-# Local-only development material
-/examples/
-/tests/
-/docs/design/
 
 # Temporary files
 *.tmp
@@ -17,9 +14,9 @@ dist/
 *.swp
 *.swo
 
-# OS 
+# OS
 .DS_Store
-.claude
+.claude/
 
 # Private notes
 note/

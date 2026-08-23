@@ -1,57 +1,31 @@
-"""Public contracts and the VideoCap production flow."""
+"""Event-grounded video captioning with OpenAI-compatible models."""
 
-from videocap.contracts import (
-    DENSE_CAPTION_SCHEMA_VERSION,
-    RUN_MANIFEST_SCHEMA_VERSION,
-    ComponentRef,
-    DatasetRef,
-    DenseCaptionPrediction,
-    RunManifest,
-    TemporalCaption,
-)
-from videocap.protocols import (
-    DenseCaptionDataset,
-    DenseCaptionMetric,
-    DenseCaptionOutcome,
-    DenseCaptionProducer,
-    DenseCaptionSample,
-    DenseCaptionTask,
-)
+from videocap.config import Config, ModelConfig, PipelineConfig, VLMConfig
+from videocap.pipeline import VideoCap
 from videocap.structured import (
     DIMENSIONS,
-    EventCandidate,
     EventCaption,
-    EventCluster,
+    EventProposal,
     EventWindow,
     ProcessingWindow,
-    StructuredAdapterBundle,
+    VideoSample,
     WindowCaption,
 )
-from videocap.pipeline import VideoCap
+
+__version__ = "0.2.0"
 
 __all__ = [
-    "DENSE_CAPTION_SCHEMA_VERSION",
-    "RUN_MANIFEST_SCHEMA_VERSION",
-    "ComponentRef",
-    "DatasetRef",
-    "DenseCaptionPrediction",
-    "DenseCaptionDataset",
-    "DenseCaptionMetric",
-    "DenseCaptionOutcome",
-    "DenseCaptionProducer",
-    "DenseCaptionSample",
-    "DenseCaptionTask",
-    "RunManifest",
-    "TemporalCaption",
+    "Config",
     "DIMENSIONS",
-    "ProcessingWindow",
-    "WindowCaption",
-    "EventCandidate",
-    "EventCluster",
-    "EventWindow",
     "EventCaption",
-    "StructuredAdapterBundle",
+    "EventProposal",
+    "EventWindow",
+    "ModelConfig",
+    "PipelineConfig",
+    "ProcessingWindow",
+    "VLMConfig",
     "VideoCap",
+    "VideoSample",
+    "WindowCaption",
+    "__version__",
 ]
-
-__version__ = "0.1.0"

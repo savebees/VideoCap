@@ -1,0 +1,29 @@
+{
+  "pipeline": {
+    "window_ms": 24000,
+    "overlap_ms": 2000,
+    "evidence_frames": 8,
+    "output_name": "annotations.jsonl"
+  },
+  "vlm": {
+    "base_url": "https://api.siliconflow.cn/v1",
+    "api_key_env": "SILICONFLOW_API_KEY",
+    "model": "Qwen/Qwen3.6-35B-A3B",
+    "frame_height": 460,
+    "timeout_sec": 120,
+    "max_retries": 2,
+    "extra_body": {
+      "enable_thinking": false
+    }
+  },
+  "llm": {
+    "base_url": "https://api.siliconflow.cn/v1",
+    "api_key_env": "SILICONFLOW_API_KEY",
+    "model": "Qwen/Qwen3.6-35B-A3B",
+    "timeout_sec": 120,
+    "max_retries": 2,
+    "extra_body": {
+      "enable_thinking": false
+    }
+  }
+}

@@ -18,4 +18,6 @@ jobs:
           version: "0.12.x"
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked
-      - run: uv run videocap components
+      - run: uv run ruff check .
+      - run: uv run pytest
+      - run: uv build
