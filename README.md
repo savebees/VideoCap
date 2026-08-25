@@ -12,7 +12,7 @@
 
 VideoCap generates dense video annotations with five descriptions—summary, subject, background, camera, and details—plus timestamped semantic events, while video-eval and video-qa support QA generation and annotation quality evaluation for model training.
 
----
+<h1 align="center"></h1>
 
 ## 📣 Demo
 
