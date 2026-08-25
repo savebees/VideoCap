@@ -144,10 +144,10 @@ class EventProposal:
     def to_dict(self) -> dict[str, Any]:
         return {
             "event_id": self.event_id,
-            "source_window_ids": list(self.source_window_ids),
-            "short_caption": self.short_caption,
             "start_ms": self.start_ms,
             "end_ms": self.end_ms,
+            "short_caption": self.short_caption,
+            "source_window_ids": list(self.source_window_ids),
         }
 
 
@@ -208,8 +208,11 @@ class EventCaption:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            **self.event.to_dict(),
+            "event_id": self.event.event_id,
+            "start_ms": self.event.start_ms,
+            "end_ms": self.event.end_ms,
             "caption": self.caption,
+            "evidence_frames_ms": list(self.event.evidence_frames_ms),
             "caption_frames_ms": list(self.caption_frames_ms),
         }
 

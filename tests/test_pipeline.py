@@ -1,3 +1,5 @@
+import json
+
 from videocap.config import PipelineConfig
 from videocap.pipeline import VideoCap, processing_windows
 from videocap.structured import (
@@ -71,6 +73,24 @@ def test_pipeline_writes_only_real_annotation_stages(tmp_path):
 
     assert record["schema_version"] == "videocap/v0.2"
     assert record["events"][0]["caption"] == "A complete event caption."
+    assert list(record["events"][0]) == [
+        "event_id",
+        "start_ms",
+        "end_ms",
+        "caption",
+        "evidence_frames_ms",
+    ]
+    event_caption = json.loads(
+        (tmp_path / "stages/event_captions.jsonl").read_text(encoding="utf-8")
+    )
+    assert list(event_caption) == [
+        "event_id",
+        "start_ms",
+        "end_ms",
+        "caption",
+        "evidence_frames_ms",
+        "caption_frames_ms",
+    ]
     assert {path.name for path in (tmp_path / "stages").iterdir()} == {
         "processing_windows.jsonl",
         "window_captions.jsonl",

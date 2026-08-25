@@ -8,22 +8,16 @@
   "vlm": {
     "base_url": "https://api.siliconflow.cn/v1",
     "api_key_env": "SILICONFLOW_API_KEY",
-    "model": "Qwen/Qwen3.6-35B-A3B",
+    "model": "Qwen/Qwen3-VL-32B-Instruct",
     "frame_height": 460,
-    "timeout_sec": 120,
-    "max_retries": 2,
-    "extra_body": {
-      "enable_thinking": false
-    }
+    "timeout_sec": 300,
+    "max_retries": 2
   },
   "llm": {
-    "base_url": "https://api.siliconflow.cn/v1",
-    "api_key_env": "SILICONFLOW_API_KEY",
-    "model": "Qwen/Qwen3.6-35B-A3B",
+    "base_url": "https://vyceai.com/v1",
+    "api_key_env": "VYCE_API_KEY",
+    "model": "gpt-5.6-luna",
     "timeout_sec": 120,
-    "max_retries": 2,
-    "extra_body": {
-      "enable_thinking": false
-    }
+    "max_retries": 2
   }
 }

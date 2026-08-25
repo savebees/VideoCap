@@ -18,7 +18,6 @@ def atomic_write_json(path: Path, document: Mapping[str, Any]) -> None:
             handle,
             ensure_ascii=False,
             indent=2,
-            sort_keys=True,
             allow_nan=False,
         )
         handle.write("\n")
@@ -31,6 +30,6 @@ def atomic_write_jsonl(path: Path, records: Iterable[Mapping[str, Any]]) -> None
     with temporary.open("w", encoding="utf-8") as handle:
         for record in records:
             handle.write(
-                json.dumps(record, ensure_ascii=False, sort_keys=True, allow_nan=False) + "\n"
+                json.dumps(record, ensure_ascii=False, allow_nan=False) + "\n"
             )
     os.replace(temporary, path)

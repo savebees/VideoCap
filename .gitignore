@@ -22,7 +22,7 @@ dist/
 note/
 
 # Inputs
-data/
+dataset/
 
 # Outputs: annotations, metrics, run artifacts
 results/

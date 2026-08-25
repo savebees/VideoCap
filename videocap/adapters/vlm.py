@@ -111,7 +111,11 @@ def parse_boundary(
         raise ValueError("boundary response must contain integer timestamps")
     start_ms, end_ms = int(start_match.group(1)), int(end_match.group(1))
     if start_ms not in start_frames or end_ms not in end_frames:
-        raise ValueError("boundary timestamps must be selected from the supplied frames")
+        raise ValueError(
+            "boundary timestamps must be selected from the supplied frames; "
+            f"got start={start_ms}, end={end_ms}, "
+            f"start_choices={tuple(start_frames)}, end_choices={tuple(end_frames)}"
+        )
     if end_ms <= start_ms:
         raise ValueError("event end must be greater than start")
     return start_ms, end_ms
@@ -126,12 +130,14 @@ class VLM:
     def _image(self, sample: VideoSample, timestamp_ms: int) -> str:
         key = (str(sample.video_path), timestamp_ms)
         if key not in self._frames:
+            # Container duration can extend a few milliseconds past the final decodable frame.
+            seek_ms = min(timestamp_ms, max(0, sample.duration_ms - 100))
             command = [
                 "ffmpeg",
                 "-v",
                 "error",
                 "-ss",
-                f"{timestamp_ms / 1000:.3f}",
+                f"{seek_ms / 1000:.3f}",
                 "-i",
                 str(sample.video_path),
                 "-frames:v",

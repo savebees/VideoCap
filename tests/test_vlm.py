@@ -1,16 +1,38 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
 
 from videocap.adapters.vlm import (
+    VLM,
     coarse_boundary_frames,
     fine_boundary_frames,
     parse_boundary,
     uniform_timestamps,
 )
-from videocap.structured import EventProposal, ProcessingWindow
+from videocap.structured import EventProposal, ProcessingWindow, VideoSample
 
 
 def test_uniform_sampling_includes_both_endpoints():
     assert uniform_timestamps(100, 500, 3) == (100, 300, 500)
+
+
+def test_frame_extraction_stays_before_the_media_endpoint(monkeypatch):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(stdout=b"jpeg")
+
+    monkeypatch.setattr("videocap.adapters.vlm.subprocess.run", run)
+    vlm = VLM.__new__(VLM)
+    vlm.frame_height = 460
+    vlm._frames = {}
+    sample = VideoSample("clip", Path("clip.mp4"), 20_020)
+
+    vlm._image(sample, 20_019)
+
+    assert commands[0][commands[0].index("-ss") + 1] == "19.920"
 
 
 def test_boundary_sampling_is_bounded_and_uses_four_fps_for_fine_review():

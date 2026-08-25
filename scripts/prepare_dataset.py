@@ -20,8 +20,10 @@ def _duration_ms(video_path: Path) -> int:
             "ffprobe",
             "-v",
             "error",
+            "-select_streams",
+            "v:0",
             "-show_entries",
-            "format=duration",
+            "stream=duration",
             "-of",
             "default=noprint_wrappers=1:nokey=1",
             str(video_path),
@@ -30,7 +32,31 @@ def _duration_ms(video_path: Path) -> int:
         capture_output=True,
         text=True,
     )
-    return round(float(result.stdout.strip()) * 1_000)
+    duration = result.stdout.strip()
+    if duration != "N/A":
+        return round(float(duration) * 1_000)
+
+    packets = subprocess.run(
+        [
+            "ffprobe",
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "packet=pts_time,duration_time",
+            "-of",
+            "csv=p=0",
+            str(video_path),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.splitlines()
+    if not packets:
+        raise ValueError(f"video stream has no packets: {video_path}")
+    pts, packet_duration = map(float, packets[-1].split(","))
+    return round((pts + packet_duration) * 1_000)
 
 
 def prepare_dataset(video_dir: str | Path, output: str | Path) -> int:

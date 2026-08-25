@@ -1,5 +1,33 @@
+from pathlib import Path
+from types import SimpleNamespace
+
 from scripts import prepare_dataset
 from videocap.dataset import load_manifest
+
+
+def test_duration_uses_the_video_stream(monkeypatch):
+    commands = []
+
+    def run(command, **kwargs):
+        commands.append(command)
+        return SimpleNamespace(stdout="29.696363\n")
+
+    monkeypatch.setattr(prepare_dataset.subprocess, "run", run)
+
+    assert prepare_dataset._duration_ms(Path("clip.mp4")) == 29_696
+    assert commands[0][commands[0].index("-select_streams") + 1] == "v:0"
+    assert commands[0][commands[0].index("-show_entries") + 1] == "stream=duration"
+
+
+def test_duration_uses_the_final_video_packet_when_stream_duration_is_missing(monkeypatch):
+    responses = iter(("N/A\n", "0.000000,0.033000\n29.663000,0.033000\n"))
+
+    def run(command, **kwargs):
+        return SimpleNamespace(stdout=next(responses))
+
+    monkeypatch.setattr(prepare_dataset.subprocess, "run", run)
+
+    assert prepare_dataset._duration_ms(Path("clip.mp4")) == 29_696
 
 
 def test_prepare_dataset_builds_a_valid_recursive_manifest(tmp_path, monkeypatch):

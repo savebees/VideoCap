@@ -109,8 +109,11 @@ class VideoCap:
             "captions": dict(global_captions),
             "events": [
                 {
-                    **caption.event.to_dict(),
+                    "event_id": caption.event.event_id,
+                    "start_ms": caption.event.start_ms,
+                    "end_ms": caption.event.end_ms,
                     "caption": caption.caption,
+                    "evidence_frames_ms": list(caption.event.evidence_frames_ms),
                 }
                 for caption in event_captions
             ],

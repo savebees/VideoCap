@@ -86,7 +86,6 @@ text immediately before each image gives its role and exact timestamp. START_NEI
 cover the coarse-start neighborhood, END_NEIGHBORHOOD frames cover the coarse-end neighborhood,
 and a frame may have both roles when the neighborhoods overlap.
 
-Locate the described activity itself, not merely the presence of its subject or background.
 Choose START_MS as the earliest supplied start-neighborhood timestamp where the defining activity
 has visibly begun. Choose END_MS as the latest supplied end-neighborhood timestamp where the
 activity is still occurring or its immediate visible completion is shown; exclude later unrelated
