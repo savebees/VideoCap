@@ -1,31 +1,116 @@
-# VideoCap
+<h1 align="center">VideoCap</h1>
 
-[简体中文](README.zh-CN.md)
+<p align="center">
+  English | <a href="docs/README.zh-CN.md"><ins>简体中文</ins></a>
+</p>
 
-VideoCap turns local videos into two complementary annotation layers: a five-dimensional caption for the complete video and temporally grounded captions for coherent events. It keeps the production graph fixed and inspectable, so processing windows, model evidence, event boundaries, and final annotations remain easy to audit.
+<p align="center">
+  <img src="https://img.shields.io/badge/dense--video--annotator-2563eb?style=flat-square" alt="dense-video-annotator">
+  <img src="https://img.shields.io/badge/video--eval-2563eb?style=flat-square" alt="video-eval">
+  <img src="https://img.shields.io/badge/video--qa-2563eb?style=flat-square" alt="video-qa">
+</p>
 
-## Pipeline
+VideoCap generates dense video annotations with five descriptions—summary, subject, background, camera, and details—plus timestamped semantic events, while video-eval and video-qa support QA generation and annotation quality evaluation for model training.
 
-```text
-video manifest
-  -> overlapping processing windows
-  -> VLM: five-dimensional caption for each window
-  -> LLM: event proposals from short + main_object captions
-  -> VLM: coarse and fine event-boundary review
-  -> VLM: caption each grounded event
-  -> LLM: merge events and window evidence into global captions
-  -> final JSONL + stage artifacts
+---
+
+## 📣 Demo
+
+<p align="center">
+  <a href="assets/big-buck-bunny-demo.mp4">
+    <img src="assets/big-buck-bunny-demo.gif" width="480" alt="Big Buck Bunny wakes in his burrow and explores a sunny meadow">
+  </a>
+  <br>
+  <sub>Copyright © 2008 Blender Foundation · <a href="https://peach.blender.org/about/">CC BY 3.0</a></sub>
+</p>
+
+### VideoCap output
+
+```json
+{
+  "schema_version": "videocap/v0.2",
+  "video_id": "bbb-0038-0078",
+  "duration_ms": 40000,
+  "captions": {
+    "short": "Big Buck Bunny wakes inside a shaded burrow, steps into a bright meadow, pauses to take in the morning, smells a cluster of white flowers, and notices a purple butterfly.",
+    "main_object": "The large gray rabbit slowly raises his head from the burrow, crawls into the sunlight, sits upright, stretches his arms and back, scans the meadow with a relaxed smile, bends toward white blossoms, and turns to follow a purple butterfly.",
+    "background": "The sequence moves from a dark, grass-lined burrow beneath a broad tree into a sunlit meadow bordered by rocks, leafy trees, rolling green hills, white daisies, purple flowers, and a clear blue sky; small birds and insects animate the otherwise calm landscape.",
+    "camera": "It opens with a static wide view of the burrow, moves into a close-up as the rabbit wakes, cuts to medium and low-angle shots as he emerges and stretches, then alternates between close-ups of his face and the flowers, an over-the-shoulder meadow view, and a high-angle shot tracking his attention toward the butterfly.",
+    "detailed": "A quiet wide shot holds on the dark burrow beneath the tree. The rabbit is barely visible at first, then raises his head into the light, opens his eyes, and looks toward the entrance. The rabbit crawls out of the burrow, settles on the grass beside the opening, and slowly stretches his arms, shoulders, and back in the warm sunlight. Now fully upright, he tilts his face toward the sky, breathes in, and surveys the open meadow with a calm smile as the camera moves between low-angle and close-up views. He turns toward a patch of white flowers, leans in, and smells the blossoms while the edit cuts from an over-the-shoulder view to a close-up of his face among the petals. A purple butterfly flutters beside the flowers. The rabbit notices it, shifts his attention across the meadow, and moves after it as the sequence ends on a high-angle view."
+  },
+  "events": [
+    {"event_id": "event_0000", "start_ms": 0, "end_ms": 7000, "evidence_frames_ms": [1000, 6000], "caption": "A quiet wide shot holds on the dark burrow beneath the tree. The rabbit is barely visible at first, then raises his head into the light, opens his eyes, and looks toward the entrance."},
+    {"event_id": "event_0001", "start_ms": 7000, "end_ms": 16000, "evidence_frames_ms": [8000, 15000], "caption": "The rabbit crawls out of the burrow, settles on the grass beside the opening, and slowly stretches his arms, shoulders, and back in the warm sunlight."},
+    {"event_id": "event_0002", "start_ms": 16000, "end_ms": 25000, "evidence_frames_ms": [17000, 24000], "caption": "Now fully upright, he tilts his face toward the sky, breathes in, and surveys the open meadow with a calm smile as the camera moves between low-angle and close-up views."},
+    {"event_id": "event_0003", "start_ms": 25000, "end_ms": 33000, "evidence_frames_ms": [26000, 32000], "caption": "He turns toward a patch of white flowers, leans in, and smells the blossoms while the edit cuts from an over-the-shoulder view to a close-up of his face among the petals."},
+    {"event_id": "event_0004", "start_ms": 33000, "end_ms": 40000, "evidence_frames_ms": [34000, 39000], "caption": "A purple butterfly flutters beside the flowers. The rabbit notices it, shifts his attention across the meadow, and moves after it as the sequence ends on a high-angle view."}
+  ]
+}
 ```
 
-Processing windows are model-input units, not annotation boundaries. One LLM call groups consecutive windows into semantic events; a VLM then selects visually supported timestamps and captions only the accepted interval. The global merge uses grounded events as its chronological backbone and window captions for subject, setting, camera, and fine-detail evidence.
+### video-qa
 
-## Requirements
+Generated QA examples:
 
-- Python 3.10 or newer
-- `ffmpeg` available on `PATH`
-- an OpenAI-compatible Chat Completions endpoint that accepts `image_url` data URIs
+```json
+[
+  {
+    "qa_id": "bbb-0038-0078__global_short",
+    "task": "global_short",
+    "question": "What happens in this video?",
+    "answer": "Big Buck Bunny wakes inside a shaded burrow, steps into a bright meadow, pauses to take in the morning, smells a cluster of white flowers, and notices a purple butterfly.",
+    "provenance": {"event_ids": ["event_0000", "event_0001", "event_0002", "event_0003", "event_0004"], "evidence_frames_ms": []}
+  },
+  {
+    "qa_id": "bbb-0038-0078__global_camera",
+    "task": "global_camera",
+    "question": "How is the video filmed?",
+    "answer": "It opens with a static wide view of the burrow, moves into a close-up as the rabbit wakes, cuts to medium and low-angle shots as he emerges and stretches, then alternates between close-ups of his face and the flowers, an over-the-shoulder meadow view, and a high-angle shot tracking his attention toward the butterfly.",
+    "provenance": {"event_ids": ["event_0000", "event_0001", "event_0002", "event_0003", "event_0004"], "evidence_frames_ms": []}
+  },
+  {
+    "qa_id": "bbb-0038-0078__event_0004",
+    "task": "temporal_event",
+    "question": "What happens from 33000 ms to 40000 ms?",
+    "answer": "A purple butterfly flutters beside the flowers. The rabbit notices it, shifts his attention across the meadow, and moves after it as the sequence ends on a high-angle view.",
+    "provenance": {"event_ids": ["event_0004"], "evidence_frames_ms": [34000, 39000]}
+  }
+]
+```
 
-Install the project with `uv`:
+### video-eval
+
+video-eval evaluates annotation quality against reviewed references using five-dimension caption F1, temporal event IoU, event-caption F1, temporal coverage, global-event consistency, and reference-supported hallucination.
+
+```json
+{
+  "video_id": "bbb-0038-0078",
+  "accepted": true,
+  "caption_f1_by_dimension": {
+    "short": 0.706,
+    "main_object": 0.585,
+    "background": 0.580,
+    "camera": 0.527,
+    "detailed": 0.943
+  },
+  "matched_events": 5,
+  "candidate_events": 5,
+  "reference_events": 5,
+  "metrics": {
+    "global_caption_f1": 0.668,
+    "event_boundary_iou": 0.902,
+    "event_caption_f1": 0.930,
+    "temporal_coverage": 1.0,
+    "temporal_coverage_delta": 0.100,
+    "consistency": 1.0,
+    "hallucination": 0.242
+  }
+}
+```
+
+## 🚀 Quick start
+
+VideoCap requires Python 3.10+, `ffmpeg`, and OpenAI-compatible VLM and LLM endpoints. Clone the repository, then install it with `uv`:
 
 ```bash
 git clone https://github.com/savebees/VideoCap.git
@@ -33,7 +118,7 @@ cd VideoCap
 uv sync --locked
 ```
 
-Standard editable installation also works:
+Or use a standard virtual environment and `pip`:
 
 ```bash
 python -m venv .venv
@@ -41,52 +126,7 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
-## Configuration
-
-All runtime settings live in one file: [`configs/videocap.json`](configs/videocap.json). The VLM and LLM sections use the same small OpenAI-compatible contract but may point to different providers or models.
-
-```json
-{
-  "pipeline": {
-    "window_ms": 24000,
-    "overlap_ms": 2000,
-    "evidence_frames": 8,
-    "output_name": "annotations.jsonl"
-  },
-  "vlm": {
-    "base_url": "https://api.siliconflow.cn/v1",
-    "api_key_env": "SILICONFLOW_API_KEY",
-    "model": "Qwen/Qwen3.6-35B-A3B",
-    "frame_height": 460,
-    "timeout_sec": 120,
-    "max_retries": 2,
-    "extra_body": {"enable_thinking": false}
-  },
-  "llm": {
-    "base_url": "https://api.siliconflow.cn/v1",
-    "api_key_env": "SILICONFLOW_API_KEY",
-    "model": "Qwen/Qwen3.6-35B-A3B",
-    "timeout_sec": 120,
-    "max_retries": 2,
-    "extra_body": {"enable_thinking": false}
-  }
-}
-```
-
-API keys are read only from the named environment variables. The resolved run configuration therefore contains endpoint and model provenance without storing credentials.
-
-## Video Manifest
-
-The input is UTF-8 JSONL with one video per line:
-
-```json
-{"video_id":"video_001","video_path":"videos/video_001.mp4","duration_ms":68320}
-{"video_id":"video_002","video_path":"videos/video_002.mp4","duration_ms":124500,"metadata":{"split":"demo"}}
-```
-
-Relative video paths are resolved from the manifest directory. Video IDs must be unique, files must exist, and durations are expressed in milliseconds.
-
-## Run
+Set the providers and models in [`configs/videocap.json`](configs/videocap.json), export the API key named by `api_key_env`, and run:
 
 ```bash
 export SILICONFLOW_API_KEY="..."
@@ -95,65 +135,39 @@ uv run videocap run videos.jsonl \
   --output-root runs
 ```
 
-Each execution creates a new immutable run directory:
+When using `pip`, replace `uv run videocap` with `videocap` inside the activated environment.
 
-```text
-runs/<run_id>/
-├── annotations.jsonl
-├── config.json
-├── failures.jsonl
-├── manifest.json
-├── summary.json
-└── stages/<video_id>/
-    ├── processing_windows.jsonl
-    ├── window_captions.jsonl
-    ├── event_proposals.jsonl
-    ├── event_boundaries.jsonl
-    ├── event_captions.jsonl
-    ├── global_caption.json
-    └── failure.json              # only when this video fails
-```
+For Claude Code, Codex, or another coding agent, paste:
 
-The run manifest records the dataset and configuration hashes, VideoCap version, Git state, and creation time. A failed video is recorded explicitly and does not erase successful records from the same run.
+> Configure VideoCap in this repository using my OpenAI-compatible VLM and LLM providers and models, keep all API keys in environment variables, generate `videos.jsonl` from my video directory, and run a one-video smoke test.
 
-## Output
+## 📦 Dataset preparation
 
-```json
-{
-  "schema_version": "videocap/v0.2",
-  "video_id": "video_001",
-  "duration_ms": 68320,
-  "captions": {
-    "short": "A man prepares and serves a cooked dish.",
-    "main_object": "A man prepares ingredients, cooks them, and carries the finished plate.",
-    "background": "The activity takes place in a kitchen and adjoining dining area.",
-    "camera": "Mostly static medium shots follow the activity from the counter to the table.",
-    "detailed": "A man prepares ingredients, cooks them, plates the food, and carries it to a table."
-  },
-  "events": [
-    {
-      "event_id": "event_0000",
-      "start_ms": 1750,
-      "end_ms": 51250,
-      "evidence_frames_ms": [1750, 51250],
-      "caption": "A man prepares ingredients, cooks them, and plates the finished food."
-    }
-  ]
-}
-```
-
-The public schema is packaged at [`videocap/schemas/videocap.schema.json`](videocap/schemas/videocap.schema.json). Prompt templates are kept separate from model adapters under [`videocap/prompts`](videocap/prompts), while provider-independent VLM and LLM implementations live in [`videocap/adapters`](videocap/adapters). The five caption dimensions follow the public VDC prompt taxonomy from [AuroraCap](https://github.com/wenhaochai/aurora).
-
-## Development
+Generate a manifest directly from a video directory; the helper scans recursively and reads each duration with `ffprobe`:
 
 ```bash
-uv sync --locked
-uv run ruff check .
-uv run pytest
-uv build
+uv run python scripts/prepare_dataset.py /path/to/videos --output videos.jsonl
 ```
 
-See [`TODO.md`](TODO.md) for work that is deliberately outside the current release.
+The generated UTF-8 JSONL contains one video per line:
+
+```json
+{"video_id":"video_001","video_path":"videos/video_001.mp4","duration_ms":68320}
+{"video_id":"video_002","video_path":"videos/video_002.mp4","duration_ms":124500}
+```
+
+Relative paths are resolved from the manifest directory. Each `video_id` must be unique, each file must exist, and `duration_ms` is expressed in milliseconds.
+
+## TODO
+
+- [ ] Complete video-eval with configurable reference-based metrics and reproducible dataset-level quality reports.
+- [ ] Complete video-qa with grounded question-answer generation and retained event and evidence-frame provenance.
+
+## 🤝 Acknowledgement
+
+We are grateful to the following open-source projects that inspired the design of VideoCap.
+
+- [AuroraCap](https://github.com/wenhaochai/aurora): The VDC five-dimensional video-caption taxonomy and prompt design.
 
 ## License
 
