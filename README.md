@@ -12,7 +12,6 @@
 
 VideoCap generates dense video annotations with five descriptions—summary, subject, background, camera, and details—plus timestamped semantic events, while video-eval and video-qa support QA generation and annotation quality evaluation for model training.
 
-<h1 align="center"></h1>
 
 ## 📣 Demo
 
@@ -55,25 +54,32 @@ Generated QA examples:
 ```json
 [
   {
-    "qa_id": "bbb-0038-0078__global_short",
-    "task": "global_short",
-    "question": "What happens in this video?",
-    "answer": "Big Buck Bunny wakes inside a shaded burrow, steps into a bright meadow, pauses to take in the morning, smells a cluster of white flowers, and notices a purple butterfly.",
+    "qa_id": "bbb-0038-0078__global_main_object",
+    "task": "action_recognition",
+    "question": "What actions does the main subject perform throughout the video?",
+    "answer": "The large gray rabbit slowly raises his head from the burrow, crawls into the sunlight, sits upright, stretches his arms and back, scans the meadow with a relaxed smile, bends toward white blossoms, and turns to follow a purple butterfly.",
     "provenance": {"event_ids": ["event_0000", "event_0001", "event_0002", "event_0003", "event_0004"], "evidence_frames_ms": []}
   },
   {
-    "qa_id": "bbb-0038-0078__global_camera",
-    "task": "global_camera",
-    "question": "How is the video filmed?",
-    "answer": "It opens with a static wide view of the burrow, moves into a close-up as the rabbit wakes, cuts to medium and low-angle shots as he emerges and stretches, then alternates between close-ups of his face and the flowers, an over-the-shoulder meadow view, and a high-angle shot tracking his attention toward the butterfly.",
+    "qa_id": "bbb-0038-0078__global_background",
+    "task": "scene_transition",
+    "question": "How does the setting or background change throughout the video?",
+    "answer": "The sequence moves from a dark, grass-lined burrow beneath a broad tree into a sunlit meadow bordered by rocks, leafy trees, rolling green hills, white daisies, purple flowers, and a clear blue sky; small birds and insects animate the otherwise calm landscape.",
     "provenance": {"event_ids": ["event_0000", "event_0001", "event_0002", "event_0003", "event_0004"], "evidence_frames_ms": []}
   },
   {
-    "qa_id": "bbb-0038-0078__event_0004",
-    "task": "temporal_event",
-    "question": "What happens from 33000 ms to 40000 ms?",
-    "answer": "A purple butterfly flutters beside the flowers. The rabbit notices it, shifts his attention across the meadow, and moves after it as the sequence ends on a high-angle view.",
-    "provenance": {"event_ids": ["event_0004"], "evidence_frames_ms": [34000, 39000]}
+    "qa_id": "bbb-0038-0078__global_detailed",
+    "task": "temporal_reasoning",
+    "question": "How do the events unfold from beginning to end?",
+    "answer": "A quiet wide shot holds on the dark burrow beneath the tree. The rabbit is barely visible at first, then raises his head into the light, opens his eyes, and looks toward the entrance. The rabbit crawls out of the burrow, settles on the grass beside the opening, and slowly stretches his arms, shoulders, and back in the warm sunlight. Now fully upright, he tilts his face toward the sky, breathes in, and surveys the open meadow with a calm smile as the camera moves between low-angle and close-up views. He turns toward a patch of white flowers, leans in, and smells the blossoms while the edit cuts from an over-the-shoulder view to a close-up of his face among the petals. A purple butterfly flutters beside the flowers. The rabbit notices it, shifts his attention across the meadow, and moves after it as the sequence ends on a high-angle view.",
+    "provenance": {"event_ids": ["event_0000", "event_0001", "event_0002", "event_0003", "event_0004"], "evidence_frames_ms": []}
+  },
+  {
+    "qa_id": "bbb-0038-0078__event_0003__grounding",
+    "task": "temporal_grounding",
+    "question": "When does this event occur: He turns toward a patch of white flowers, leans in, and smells the blossoms while the edit cuts from an over-the-shoulder view to a close-up of his face among the petals.",
+    "answer": "From 25000 ms to 33000 ms.",
+    "provenance": {"event_ids": ["event_0003"], "evidence_frames_ms": [26000, 32000]}
   }
 ]
 ```
@@ -161,13 +167,15 @@ Relative paths are resolved from the manifest directory. Each `video_id` must be
 ## TODO
 
 - [ ] Complete video-eval with configurable reference-based metrics and reproducible dataset-level quality reports.
-- [ ] Complete video-qa with grounded question-answer generation and retained event and evidence-frame provenance.
+- [ ] Complete video-qa with grounded question-answer generation.
 
 ## 🤝 Acknowledgement
 
 We are grateful to the following open-source projects that inspired the design of VideoCap.
 
 - [AuroraCap](https://github.com/wenhaochai/aurora): The VDC five-dimensional video-caption taxonomy and prompt design.
+- [MVBench](https://github.com/OpenGVLab/Ask-Anything): The capability-oriented taxonomy for temporal video understanding tasks.
+- [TempCompass](https://github.com/llyx97/TempCompass): The temporal-perception dimensions and QA task design.
 
 ## License
 
