@@ -35,32 +35,39 @@ END_EVENT
 """
 
 
-COARSE_EVENT_BOUNDARY_PROMPT = """You are locating the coarse temporal boundaries of one
+_BOUNDARY_EVENT_DEFINITION = """An event is a complete narrative unit in which a particular
+subject or group participates in one coherent activity. It includes any necessary visible initial
+state, the defining actions and their progression, and the immediate visible outcome when shown.
+Several actions, shots, viewpoints, or locations may belong to the same event when they form one
+continuous narrative."""
+
+
+COARSE_EVENT_BOUNDARY_PROMPT = f"""You are locating the coarse temporal boundaries of one
 candidate event in a video.
 
-An event is a plot-based semantic unit in which a particular subject or group participates in one
-coherent activity. It may contain several actions, shots, and changes of location when they belong
-to the same continuous activity.
+{_BOUNDARY_EVENT_DEFINITION}
 
-Candidate event: {event_caption}
-Selected processing windows: {window_ranges}
+Candidate event: {{event_caption}}
+Selected processing windows: {{window_ranges}}
 
-You will receive an ordered sequence of images. The text immediately before each image gives its
-role and exact timestamp. START_BOUNDARY frames sample the first selected window, END_BOUNDARY
-frames sample the last selected window, and CONTINUITY_ANCHOR frames sparsely sample the windows
-between them. For a single-window event, every image is labelled START_END_BOUNDARY and may be
-used for either boundary.
+You will receive an ordered sequence of images sampled at approximately 1 fps across the complete
+candidate range, uniformly limited to 24 images for longer ranges. The text immediately before
+each image gives its exact timestamp. Every image is labelled START_END_BOUNDARY and may be used
+for either boundary.
 
-Determine whether the images support the candidate as one coherent event. A change of shot,
-viewpoint, or location alone does not end an event when the subject and activity remain continuous.
-If the event is coherent, choose the earliest supplied start-boundary timestamp that visibly
-belongs to it and the latest supplied end-boundary timestamp that visibly belongs to it. The
+The selected windows are a search range and may contain adjacent unrelated context near either
+end because processing windows overlap. Exclude that context by choosing the event boundaries;
+its presence alone does not make the candidate inconsistent. A change of shot, viewpoint, or
+location alone does not end an event when the subject and activity remain continuous.
+
+If the images support the candidate as one coherent event, choose the earliest supplied timestamp
+that visibly belongs to it and the latest supplied timestamp that visibly belongs to it. The
 sampling is intentionally sparse: select only timestamps attached to supplied images and do not
 estimate a time between frames.
 
-Return INCONSISTENT only when the visual evidence clearly contradicts the caption or shows that
-the selected windows cannot belong to one coherent event. Do not repair the candidate by
-rewriting, splitting, or merging it.
+Return INCONSISTENT only when the candidate event is not visibly supported anywhere in the search
+range, or when the caption itself combines disjoint activities that cannot form one continuous
+event interval. Do not repair the candidate by rewriting, splitting, or merging it.
 
 If the event is coherent, return exactly:
 STATUS: OK
@@ -74,23 +81,27 @@ END_MS: NONE
 """
 
 
-FINE_EVENT_BOUNDARY_PROMPT = """You are refining the exact temporal boundaries of one candidate
+FINE_EVENT_BOUNDARY_PROMPT = f"""You are refining the exact temporal boundaries of one candidate
 event in a video.
 
-Candidate event: {event_caption}
-Coarse start: {coarse_start_ms} ms
-Coarse end: {coarse_end_ms} ms
+{_BOUNDARY_EVENT_DEFINITION}
 
-You will receive an ordered sequence of images sampled at 4 fps around the coarse boundaries. The
-text immediately before each image gives its role and exact timestamp. START_NEIGHBORHOOD frames
-cover the coarse-start neighborhood, END_NEIGHBORHOOD frames cover the coarse-end neighborhood,
-and a frame may have both roles when the neighborhoods overlap.
+Candidate event: {{event_caption}}
+Coarse start: {{coarse_start_ms}} ms
+Coarse end: {{coarse_end_ms}} ms
 
-Choose START_MS as the earliest supplied start-neighborhood timestamp where the defining activity
-has visibly begun. Choose END_MS as the latest supplied end-neighborhood timestamp where the
-activity is still occurring or its immediate visible completion is shown; exclude later unrelated
-aftermath. A change of shot, viewpoint, or location alone is not a boundary when the same activity
-remains continuous.
+You will receive at most 24 ordered images sampled uniformly around the coarse boundaries. Each
+boundary neighborhood contains at most 12 images. Its radius is at least two seconds and expands
+when necessary to cover the local spacing between coarse frames, so sampling density varies with
+the candidate event's duration. The middle of the event is intentionally omitted. The text
+immediately before each image gives its role and exact timestamp. START_NEIGHBORHOOD frames cover
+the coarse-start neighborhood, END_NEIGHBORHOOD frames cover the coarse-end neighborhood, and a
+frame may have both roles when the neighborhoods overlap.
+
+Choose START_MS as the earliest supplied start-neighborhood timestamp that belongs to the complete
+event, including its necessary visible initial state. Choose END_MS as the latest supplied
+end-neighborhood timestamp that belongs to the complete event, including its immediate visible
+outcome when shown. Exclude unrelated context before the event and unrelated aftermath after it.
 
 Use only the supplied images. Select timestamps attached to supplied images and do not
 interpolate between frames, infer an unseen action, rewrite the caption, split the event, or merge
@@ -168,7 +179,7 @@ def build_coarse_event_boundary_prompt(
     if not windows:
         raise ValueError("coarse boundary review requires selected windows")
     window_ranges = ", ".join(
-        f"{window.window_id} ({_timestamp(window.start_ms)} - {_timestamp(window.end_ms)})"
+        f"{window.window_id} ({_timestamp(window.start_ms)} - {_timestamp(window.end_ms - 1)})"
         for window in windows
     )
     return COARSE_EVENT_BOUNDARY_PROMPT.format(

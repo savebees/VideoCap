@@ -43,46 +43,38 @@ def coarse_boundary_frames(
 ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
     by_id = {window.window_id: window for window in windows}
     selected = tuple(by_id[window_id] for window_id in event.source_window_ids)
-    if len(selected) == 1:
-        window = selected[0]
-        count = min(24, max(2, math.ceil((window.end_ms - window.start_ms) / 1_000)))
-        frames = uniform_timestamps(window.start_ms, window.end_ms - 1, count)
-        return frames, frames, frames
 
-    anchor_count = min(4, len(selected) - 2)
-    boundary_budget = 24 - anchor_count
-    start_frames = uniform_timestamps(
-        selected[0].start_ms,
-        selected[0].end_ms - 1,
-        boundary_budget // 2,
-    )
-    end_frames = uniform_timestamps(
-        selected[-1].start_ms,
-        selected[-1].end_ms - 1,
-        boundary_budget - len(start_frames),
-    )
-    interior = selected[1:-1]
-    anchor_windows = (
-        interior[((2 * index + 1) * len(interior)) // (2 * anchor_count)]
-        for index in range(anchor_count)
-    )
-    anchors = tuple(
-        window.start_ms + (window.end_ms - window.start_ms) // 2 for window in anchor_windows
-    )
-    return tuple(sorted(set(start_frames + anchors + end_frames))), start_frames, end_frames
+    start_ms, end_ms = selected[0].start_ms, selected[-1].end_ms
+    frames = tuple(range(start_ms, end_ms, 1_000))
+    if len(frames) < 2:
+        frames = uniform_timestamps(start_ms, end_ms - 1, 2)
+    elif len(frames) > 24:
+        frames = uniform_timestamps(start_ms, end_ms - 1, 24)
+    elif frames[-1] != end_ms - 1:
+        frames = (*frames[:-1], end_ms - 1) if len(frames) == 24 else (*frames, end_ms - 1)
+    return frames, frames, frames
 
 
 def fine_boundary_frames(
     event: EventProposal,
     coarse_start_ms: int,
     coarse_end_ms: int,
+    coarse_frames: Sequence[int],
 ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[int, ...]]:
     def neighborhood(center_ms: int) -> tuple[int, ...]:
-        return tuple(
-            timestamp
-            for timestamp in range(center_ms - 1_500, center_ms + 1_500, 250)
-            if event.start_ms <= timestamp < event.end_ms
-        )
+        index = coarse_frames.index(center_ms)
+        adjacent_gaps = []
+        if index:
+            adjacent_gaps.append(center_ms - coarse_frames[index - 1])
+        if index + 1 < len(coarse_frames):
+            adjacent_gaps.append(coarse_frames[index + 1] - center_ms)
+        radius_ms = max(2_000, *adjacent_gaps)
+        start_ms = max(event.start_ms, center_ms - radius_ms)
+        end_ms = min(event.end_ms - 1, center_ms + radius_ms)
+        if end_ms <= start_ms:
+            return (start_ms,)
+        count = min(12, end_ms - start_ms + 1)
+        return uniform_timestamps(start_ms, end_ms, count)
 
     start_frames = neighborhood(coarse_start_ms)
     end_frames = neighborhood(coarse_end_ms)
@@ -222,7 +214,12 @@ class VLM:
             coarse=True,
         )
 
-        fine_frames, fine_start, fine_end = fine_boundary_frames(event, *coarse)
+        fine_frames, fine_start, fine_end = fine_boundary_frames(
+            event,
+            coarse[0],
+            coarse[1],
+            coarse_frames,
+        )
         fine_roles = {
             timestamp: "+".join(
                 role

@@ -17,7 +17,7 @@
     "base_url": "https://vyceai.com/v1",
     "api_key_env": "VYCE_API_KEY",
     "model": "gpt-5.6-luna",
-    "timeout_sec": 120,
+    "timeout_sec": 300,
     "max_retries": 2
   }
 }
