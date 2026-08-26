@@ -169,7 +169,7 @@ uv run python scripts/prepare_dataset.py /path/to/videos --output videos.jsonl
 - [ ] 完成 video-eval，支持可配置的参考标注评估指标和可复现的数据集级质量报告。
 - [ ] 完成 video-qa，支持保留事件与证据帧来源的 grounded QA 数据生成。
 
-## 🤝 致谢
+## 🩷 致谢
 
 感谢以下开源项目对 VideoCap 设计的启发。
 

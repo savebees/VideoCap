@@ -169,7 +169,7 @@ Relative paths are resolved from the manifest directory. Each `video_id` must be
 - [ ] Complete video-eval with configurable reference-based metrics and reproducible dataset-level quality reports.
 - [ ] Complete video-qa with grounded question-answer generation.
 
-## 🤝 Acknowledgement
+## 🩷 Acknowledgement
 
 We are grateful to the following open-source projects that inspired the design of VideoCap.
 
