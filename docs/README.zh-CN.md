@@ -1,4 +1,4 @@
-<h1 align="center">VideoCap</h1>
+<h1 align="center">dense-video-annotator</h1>
 
 <p align="center">
   <a href="../README.md"><ins>English</ins></a> | 简体中文
@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/video--qa-2563eb?style=flat-square" alt="video-qa">
 </p>
 
-VideoCap 为视频生成密集标注，包含概述、主体、背景、镜头和细节五类描述，以及带时间边界的语义事件，video-eval 和 video-qa 为模型训练提供标注质量评估与问答数据生成能力。
+[**dense-video-annotator**](https://github.com/savebees/dense-video-annotator) 包含三个部分：用于生成密集视频标注的 `videocap`（包括概述、主体、背景、镜头和细节五类描述，以及带时间边界的语义事件）、用于生成有依据问答的 `video-qa`，以及用于评估标注质量的 `video-eval`。
 
 
 ## 📣 示例
@@ -119,8 +119,8 @@ video-eval 使用五维 caption F1、事件边界 IoU、事件 caption F1、时�
 VideoCap 需要 Python 3.10+、`ffmpeg`，以及 OpenAI-compatible VLM 和 LLM 接口。克隆仓库后，使用 `uv` 安装：
 
 ```bash
-git clone https://github.com/savebees/VideoCap.git
-cd VideoCap
+git clone https://github.com/savebees/dense-video-annotator.git
+cd dense-video-annotator
 uv sync --locked
 ```
 

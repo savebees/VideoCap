@@ -1,4 +1,4 @@
-<h1 align="center">VideoCap</h1>
+<h1 align="center">dense-video-annotator</h1>
 
 <p align="center">
   English | <a href="docs/README.zh-CN.md"><ins>简体中文</ins></a>
@@ -10,7 +10,7 @@
   <img src="https://img.shields.io/badge/video--qa-2563eb?style=flat-square" alt="video-qa">
 </p>
 
-VideoCap generates dense video annotations with five descriptions—summary, subject, background, camera, and details—plus timestamped semantic events, while video-eval and video-qa support QA generation and annotation quality evaluation for model training.
+[**dense-video-annotator**](https://github.com/savebees/dense-video-annotator) brings together three components: `videocap` for dense video annotation with five descriptions—summary, subject, background, camera, and details—plus timestamped semantic events; `video-qa` for grounded QA generation; and `video-eval` for annotation quality evaluation.
 
 
 ## 📣 Demo
@@ -119,8 +119,8 @@ video-eval evaluates annotation quality against reviewed references using five-d
 VideoCap requires Python 3.10+, `ffmpeg`, and OpenAI-compatible VLM and LLM endpoints. Clone the repository, then install it with `uv`:
 
 ```bash
-git clone https://github.com/savebees/VideoCap.git
-cd VideoCap
+git clone https://github.com/savebees/dense-video-annotator.git
+cd dense-video-annotator
 uv sync --locked
 ```
 
